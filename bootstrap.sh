@@ -51,7 +51,7 @@ case $1 in
     flocker-control $FLOCKER_OPTS
   ;;
   flocker-dataset-agent|flocker-container-agent)
-    # create node crt
+    # create node crt if not exist 
     [ -f $NODE_CRT ] || {
       node_crt=`flocker-ca create-control-certificate $HOSTNAME |cut -d " " -f 2|cut -d "." -f 1`
       mv ${node_crt}.crt node.crt
