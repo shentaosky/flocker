@@ -1,0 +1,33 @@
+flocker-dataset-agent:
+  image: 172.16.1.41:5000/stefan/transwarp-flocker:test
+  command: bootstrap.sh flocker-dataset-agent
+  net: "host"
+  privileged: true
+  volumes:
+    - /var/lib/docker/plugins/:/var/lib/docker/plugins/
+    - /flocker/:/flocker/
+    - /dev/zfs:/dev/zfs
+    - /etc/mtab:/etc/mtab
+    - /etc/flocker/:/etc/flocker/
+  environment:
+    - DEBUG=1
+
+flocker-container-agent:
+  image: 172.16.1.41:5000/stefan/transwarp-flocker:test
+  command: bootstrap.sh flocker-container-agent
+  net: "host"
+  privileged: true
+　volumes_from:
+    - flocker-dataset-agent
+  environment:
+    - DEBUG=1
+
+flocker-docker-plugin:
+  image: 172.16.1.41:5000/stefan/transwarp-flocker:test
+  command: bootstrap.sh flocker-docker-plugin
+  net: "host"
+  privileged: true
+　volumes_from:
+    - flocker-dataset-agent
+  environment:
+    - DEBUG=1

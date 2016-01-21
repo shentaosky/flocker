@@ -1,0 +1,10 @@
+flocker-control:
+  image: 172.16.1.41:5000/stefan/transwarp-flocker:test
+  command: bootstrap.sh flocker-control
+  net: "host"
+  privileged: true
+  volumes:
+    - /var/lib/flocker/:/var/lib/flocker/
+    - /etc/flocker/:/etc/flocker/
+  environment:
+    - DEBUG=1
