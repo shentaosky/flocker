@@ -26,6 +26,7 @@ RUN         yum install -y vim
 VOLUME      ["/etc/flocker"]
 VOLUME      ["/var/lib/flocker"]
 VOLUME      ["/flocker"]
+VOLUME      ["/var/run/docker/plugins/"]
 
 # copy bootstrap.sh
 COPY        bootstrap.sh /usr/local/bin/
