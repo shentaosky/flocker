@@ -37,12 +37,13 @@ done
 COMPONENT=transwarp-flocker
 DOCKER_REGISTRY=${DOCKER_REGISTRY:-"172.16.1.41:5000"}
 [ -z "$IMAGE_TAG" ] && {
-  IMAGE_TAG=$DOCKER_REGISTRY/`whoami`/$COMPONENT:`date +"%Y%m%d-%H%M%S"`
+  #IMAGE_TAG=$DOCKER_REGISTRY/`whoami`/$COMPONENT:`date +"%Y%m%d-%H%M%S"`
+  IMAGE_TAG=$DOCKER_REGISTRY/`whoami`/$COMPONENT:test
   echo "no docker images name given, use $IMAGE_TAG"
 }
 
 #=======================================================================================================
-sudo docker build --pull=true -t $IMAGE_TAG . || {
+docker build --pull=true -t $IMAGE_TAG . || {
   echo "Build Docker Images $IMAGE_TAG failed"
   exit 1
 }
