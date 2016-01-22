@@ -27,8 +27,9 @@ usage:
 EOF
 }
 
+set -x
 pushd $FLOCKER_DIR
-set -e
+#set -e
 
 # require /etc/flocker/cluster.crt to generate keys
 for file in $CLUSTER_CRT $AGENT_YML
@@ -48,7 +49,6 @@ case $1 in
       mv control-${HOSTNAME}.key control-service.key
     }
     chmod 600 control-service.*
-    flocker-control $FLOCKER_OPTS
   ;;
   flocker-dataset-agent|flocker-container-agent)
     # create node crt if not exist 
@@ -58,8 +58,6 @@ case $1 in
       mv ${node_crt}.key node.key
     }
     chmod 600 node.*
-    # run the command
-    $1 $FLOCKER_OPTS
   ;;
   flocker-docker-plugin)
     # all docker-plugin share the same crt
@@ -73,6 +71,9 @@ case $1 in
     exit 1
   ;; 
 esac
+
+# run the command
+$1 $FLOCKER_OPTS
 
 [ $DEBUG -eq 1 ] && {
   echo "Waiting for debug before exit"
