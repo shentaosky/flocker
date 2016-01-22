@@ -17,10 +17,11 @@ RUN         yum localinstall -y --nogpgcheck https://download.fedoraproject.org/
 
 # install flocker
 RUN         yum list installed clusterhq-release || yum install -y https://clusterhq-archive.s3.amazonaws.com/centos/clusterhq-release$(rpm -E %dist).noarch.rpm && \
-            yum install -y clusterhq-flocker-node
+            yum install -y clusterhq-flocker-node clusterhq-flocker-docker-plugin
 
 # just for debug
 RUN         yum install -y vim
+RUN         ssh-keygen -N "" -f /root/.ssh/id_rsa && cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
 
 # config
 VOLUME      ["/etc/flocker"]
