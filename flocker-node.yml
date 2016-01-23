@@ -6,11 +6,9 @@ flocker-dataset-agent:
   devices:
     - /dev/zfs:/dev/zfs
   volumes:
-    - /var/lib/docker/plugins/:/var/lib/docker/plugins/
+    - /var/run/docker.sock:/var/run/docker.sock
     - /flocker/:/flocker/:shared
     - /etc/flocker/:/etc/flocker/
-    - /root/.ssh/:/root/.ssh/
-    - /etc/ssh/:/etc/ssh
   environment:
     - DEBUG=1
     - FLOKCER_OPTS=""
@@ -23,27 +21,25 @@ flocker-sshd:
   devices:
     - /dev/zfs:/dev/zfs
   volumes:
-    - /var/lib/docker/plugins/:/var/lib/docker/plugins/
+    - /var/run/docker.sock:/var/run/docker.sock
     - /flocker/:/flocker/:shared
     - /etc/flocker/:/etc/flocker/
-    - /root/.ssh/:/root/.ssh/
-    - /etc/ssh/:/etc/ssh
   environment:
     - DEBUG=1
     - FLOKCER_OPTS=""
 
-#flocker-container-agent:
-#  image: 172.16.1.41:5000/stefan/transwarp-flocker:test
-#  command: bootstrap.sh flocker-container-agent
-#  net: "host"
-#  privileged: true
-#  volumes:
-#    - /var/lib/docker/plugins/:/var/lib/docker/plugins/
-#    - /flocker/:/flocker/:shared
-#    - /etc/flocker/:/etc/flocker/
-#  environment:
-#    - DEBUG=1
-#    - FLOKCER_OPTS=""
+flocker-container-agent:
+  image: 172.16.1.41:5000/stefan/transwarp-flocker:test
+  command: bootstrap.sh flocker-container-agent
+  net: "host"
+  privileged: true
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /flocker/:/flocker/:shared
+    - /etc/flocker/:/etc/flocker/
+  environment:
+    - DEBUG=1
+    - FLOKCER_OPTS=""
 
 flocker-docker-plugin:
   image: 172.16.1.41:5000/stefan/transwarp-flocker:test
@@ -51,9 +47,11 @@ flocker-docker-plugin:
   net: "host"
   privileged: true
   volumes:
-    - /var/lib/docker/plugins/:/var/lib/docker/plugins/
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /run/docker/plugins/flocker/:/var/run/docker/plugins/flocker/
     - /flocker/:/flocker/:shared
     - /etc/flocker/:/etc/flocker/
+    - /var/run/docker:/var/run/docker
   environment:
     - DEBUG=1
     - FLOKCER_OPTS=""
