@@ -3,12 +3,16 @@ FROM        centos:7
 MAINTAINER  MENG YANG "yang.meng@transwarp.io"
 
 WORKDIR /root
+
 # install epel
-RUN         yum repolist
+RUN         yum repolist && yum update -y
+
+# instatll base package
+# RUN yum groupinstall -y "base"
 RUN         yum install -y epel-release
 
 # install tools
-RUN         yum install -y openssh-server
+RUN         yum install -y epel-release openssh-server redhat-lsb
 
 # install zfs
 RUN         yum localinstall -y --nogpgcheck https://download.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm && \
@@ -21,7 +25,7 @@ RUN         yum list installed clusterhq-release || yum install -y https://clust
 
 # just for debug
 RUN         yum install -y vim
-RUN         ssh-keygen -N "" -f /root/.ssh/id_rsa && cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+RUN         /usr/sbin/sshd-keygen; ssh-keygen -N "" -f /root/.ssh/id_rsa && cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
 
 # config
 VOLUME      ["/etc/flocker"]
