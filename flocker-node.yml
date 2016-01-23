@@ -9,6 +9,7 @@ flocker-dataset-agent:
     - /var/run/docker.sock:/var/run/docker.sock
     - /flocker/:/flocker/:shared
     - /etc/flocker/:/etc/flocker/
+    - /root/.ssh/:/root/.ssh
   environment:
     - DEBUG=1
     - FLOKCER_OPTS=""
