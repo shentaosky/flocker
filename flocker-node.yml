@@ -16,7 +16,7 @@ flocker-dataset-agent:
 
 flocker-sshd:
   image: 172.16.1.41:5000/stefan/transwarp-flocker:test
-  command: /usr/sbin/sshd -D
+  command: /usr/sbin/sshd -D -p 2022
   net: "host"
   privileged: true
   devices:
@@ -25,6 +25,8 @@ flocker-sshd:
     - /var/run/docker.sock:/var/run/docker.sock
     - /flocker/:/flocker/:shared
     - /etc/flocker/:/etc/flocker/
+    - /etc/ssh:/etc/ssh
+    - /root/.ssh:/root/.ssh
   environment:
     - DEBUG=1
     - FLOKCER_OPTS=""
