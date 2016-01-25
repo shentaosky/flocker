@@ -1,0 +1,504 @@
+# Copyright ClusterHQ Inc.  See LICENSE file for details.
+# -*- test-case-name: flocker.restapi.docs.test.test_publicapi -*-
+"""
+Sphinx extension for automatically documenting api endpoints.
+"""
+
+from inspect import getsourcefile
+from collections import namedtuple
+import json
+
+from yaml import safe_load
+from docutils import nodes
+
+from sphinxcontrib import httpdomain
+from sphinxcontrib.autohttp.flask import translate_werkzeug_rule
+from sphinxcontrib.autohttp.common import http_directive
+
+from sphinx.util.compat import Directive
+from sphinx.util.nodes import nested_parse_with_titles
+from sphinx.util.docstrings import prepare_docstring
+from sphinx.errors import SphinxError
+from docutils.statemachine import ViewList
+from docutils.parsers.rst import directives
+
+from twisted.python.reflect import namedAny
+from twisted.python.filepath import FilePath
+
+from characteristic import attributes
+
+from .._schema import resolveSchema
+
+# Disable "HTTP Routing Table" index:
+httpdomain.HTTPDomain.indices = []
+
+
+class KleinRoute(namedtuple('KleinRoute', 'path methods endpoint attributes')):
+    """
+    A L{KleinRoute} instance represents a route in a L{klein.Klein}
+    application, along with the metadata associated to the route function.
+
+    @ivar methods: The HTTP methods the route accepts.
+    @ivar path: The path of this route.
+    @ivar endpoint: The L{werkzeug} endpoint name.
+    @ivar attributes: The attributes function associated with this route.
+    """
+
+
+@attributes(['request', 'response', 'doc'])
+class Example(object):
+    """
+    An L{Example} instance represents a single HTTP session example.
+
+    @ivar request: The example HTTP request.
+    @type request: L{unicode}
+
+    @ivar response: The example HTTP response.
+    @type response: L{unicode}
+    """
+    @classmethod
+    def fromDictionary(cls, d):
+        """
+        Create an L{Example} from a L{dict} with C{u"request"} and
+        C{u"response"} keys and L{unicode} values.
+        """
+        return cls(
+            request=d[u"request"],
+            response=d[u"response"],
+            doc=d[u"doc"],
+        )
+
+
+def getRoutes(app):
+    """
+    Get the routes assoicated with a L{klein} application.
+
+    Endpoints decorated with ``@private_api`` will be omitted.
+
+    @param app: The L{klein} application to introspect.
+    @type app: L{klein.Klein}
+
+    @return: The routes associated to the application.
+    @rtype: A generator of L{KleinRoute}s
+    """
+    # This accesses private attributes of Klein:
+    # https://github.com/twisted/klein/issues/49
+    # Adapted from sphinxcontrib.autohttp.flask
+    for rule in app._url_map.iter_rules():
+        methods = rule.methods.difference(['HEAD'])
+        path = translate_werkzeug_rule(rule.rule)
+
+        # Klein sets `segment_count` which we don't care about
+        # so ignore it.
+        attributes = vars(app._endpoints[rule.endpoint]).copy()
+        if 'segment_count' in attributes:
+            del attributes['segment_count']
+
+        yield KleinRoute(
+            methods=methods, path=path, endpoint=rule.endpoint,
+            attributes=attributes)
+
+
+def _parseSchema(schema, schema_store):
+    """
+    Parse a JSON Schema and return some information to document it.
+
+    This supports only two kinds of schemas: objects, and arrays of a
+    single kind of object. If your schema is more complex you may need to
+    expand this code to address that.
+
+    See:
+     * https://clusterhq.atlassian.net/browse/FLOC-1697
+     * https://clusterhq.atlassian.net/browse/FLOC-1698
+
+    @param schema: L{dict} representing a JSON Schema.
+
+    @param dict schema_store: A mapping between schema paths
+        (e.g. ``b/v1/types.json``) and the JSON schema structure.
+
+    @return: A L{dict} representing the information needed to
+        document the schema.
+    """
+    result = {}
+    schema = resolveSchema(schema, schema_store)
+
+    def fill_in_result(object_schema):
+        result['properties'] = {}
+        for property, propSchema in object_schema[u'properties'].iteritems():
+            attr = result['properties'][property] = {}
+            attr['title'] = propSchema['title']
+            attr['description'] = prepare_docstring(
+                propSchema['description'])
+            attr['required'] = property in object_schema.get("required", [])
+            attr['type'] = propSchema['type']
+
+    if schema[u"type"] == u"object":
+        result["type"] = "object"
+        fill_in_result(schema)
+    elif schema[u"type"] == u"array":
+        result["type"] = "array"
+        child_schema = schema[u"items"]
+        if child_schema.get("type") == "object":
+            fill_in_result(child_schema)
+        else:
+            raise Exception("Only single object type allowed in an array.")
+    else:
+        raise Exception(
+            'Non-object/array top-level definitions not supported.')
+
+    return result
+
+
+def _introspectRoute(route, exampleByIdentifier, schema_store):
+    """
+    Given a L{KleinRoute}, extract the information to generate documentation.
+
+    @param route: Route to inspect
+    @type route: L{KleinRoute}
+
+    @param exampleByIdentifier: A one-argument callable that accepts an example
+        identifier and returns an HTTP session example.
+
+    @param dict schema_store: A mapping between schema paths
+        (e.g. ``b/v1/types.json``) and the JSON schema structure.
+
+    @return: Information about the route
+    @rtype: L{dict} with the following keys.
+      - C{'description'}:
+             L{list} of L{str} containing a prose description of the endpoint.
+      - C{'section'}:
+             Section identifier this route should be included in.
+      - C{'header'}:
+             Header for the route.
+      - C{'input'} I{(optional)}:
+             L{dict} describing the input schema. Has C{'properties'} key with
+             a L{list} of L{dict} of L{dict} with keys C{'title'},
+             C{'description'} and C{'required'} describing the toplevel
+             properties of the schema.
+      - C{'input_schema'} I{(optional)}:
+             L{dict} including the verbatim input JSON Schema.
+      - C{'output'} I{(optional)}:
+            see C{'input'}.
+      - C{'output_schema'} I{(optional)}:
+             L{dict} including the verbatim output JSON Schema.
+      - C{'paged'} I{(optional)}:
+            If present, the endpoint is paged.
+            L{dict} with keys C{'defaultKey'} and C{'otherKeys'} giving the
+            names of default and available sort keys.
+      - C{'examples'}:
+            A list of examples (L{Example} instances) for this endpoint.
+    """
+    result = {}
+
+    try:
+        user_documentation = route.attributes["user_documentation"]
+    except KeyError:
+        raise SphinxError("Undocumented route: {}".format(route))
+
+    result['description'] = prepare_docstring(user_documentation.text)
+    result['header'] = user_documentation.header
+    result['section'] = user_documentation.section
+
+    inputSchema = route.attributes.get('inputSchema', None)
+    outputSchema = route.attributes.get('outputSchema', None)
+    if inputSchema:
+        result['input'] = _parseSchema(inputSchema, schema_store)
+        result["input_schema"] = inputSchema
+
+    if outputSchema:
+        result['output'] = _parseSchema(outputSchema, schema_store)
+        result["output_schema"] = outputSchema
+
+    examples = user_documentation.examples
+    result['examples'] = list(
+        Example.fromDictionary(exampleByIdentifier(identifier))
+        for identifier in examples)
+
+    return result
+
+
+def _formatSchema(data, incoming):
+    """
+    Generate the rst associated to a JSON schema.
+
+    See sphinxcontrib-httpdomain documentation for details.
+
+    :param data: See L{inspectRoute}.
+    :param bool incoming: If True, this is request parameter, otherwise
+        this is response.
+    """
+    if incoming:
+        param = "<json"
+    else:
+        param = ">json"
+    if data["type"] == "array":
+        param += "arr"
+    for property, attr in sorted(data[u'properties'].iteritems()):
+        if attr['required']:
+            required = '*(required)* '
+        else:
+            required = ''
+        if isinstance(attr['type'], list):
+            types = "|".join(attr['type'])
+        else:
+            types = attr['type']
+        yield ':%s %s %s: %s%s' % (param, types, property, required,
+                                   attr['title'])
+        yield ''
+        for line in attr['description']:
+            yield '   ' + line
+
+
+def _formatActualSchema(schema, title, schema_store):
+    """
+    Format a schema to reStructuredText.
+
+    :param dict schema: The JSON Schema to validate against.
+
+    :param dict schema_store: A mapping between schema paths
+        (e.g. ``b/v1/types.json``) and the JSON schema structure.
+
+    :return: Iterable of strings creating reStructuredText.
+    """
+    yield ".. hidden-code-block:: json"
+    yield "    :label: " + title
+    yield "    :starthidden: True"
+    yield ""
+    schema = resolveSchema(schema, schema_store)
+    lines = json.dumps(schema, indent=4, separators=(',', ': '),
+                       sort_keys=True).splitlines()
+    for line in lines:
+        yield "    " + line
+    yield ""
+
+
+def _formatExample(example, substitutions):
+    """
+    Generate the rst associated with an HTTP session example.
+
+    @param example: An L{Example} to format.
+
+    @param substitutions: A L{dict} to use to interpolate variables in the
+        example request and response.
+
+    @return: A generator which yields L{unicode} strings each of which should
+        be a line in the resulting rst document.
+    """
+    yield u"**Example:** {}".format(example.doc)
+    yield u""
+    yield u"Request"
+    yield u""
+    yield u".. sourcecode:: http"
+    yield u""
+
+    lines = (example.request % substitutions).splitlines()
+    lines.insert(1, u"Content-Type: application/json")
+    lines.insert(1, u"Host: api.%(DOMAIN)s" % substitutions)
+    for line in lines:
+        yield u"   " + line.rstrip()
+    yield u""
+
+    yield u"Response"
+    yield u""
+    yield u".. sourcecode:: http"
+    yield u""
+
+    lines = (example.response % substitutions).splitlines()
+    lines.insert(1, u"Content-Type: application/json")
+    for line in lines:
+        yield u"   " + line.rstrip()
+    yield u""
+
+
+def _formatRouteBody(data, schema_store):
+    """
+    Generate the description of a L{klein} route.
+
+    @param data: Result of L{_introspectRoute}.
+
+    @param dict schema_store: A mapping between schema paths
+        (e.g. ``b/v1/types.json``) and the JSON schema structure.
+
+    @return: The lines of sphinx representing the generated documentation.
+    @rtype: A generator of L{unicode}s.
+    """
+    baseSubstitutions = {
+        u"DOMAIN": u"example.com",
+        u"NODE_0": u"cf0f0346-17b2-4812-beca-1434997d6c3f",
+        u"NODE_1": u"7ec3c4eb-6b1c-43da-8015-a163f7d15244",
+        }
+
+    for line in data['description']:
+        yield line
+
+    if 'input' in data:
+        for line in _formatActualSchema(data['input_schema'],
+                                        "+ Request JSON Schema",
+                                        schema_store):
+            yield line
+    if 'output' in data:
+        for line in _formatActualSchema(data['output_schema'],
+                                        "+ Response JSON Schema",
+                                        schema_store):
+            yield line
+
+    for example in data['examples']:
+        substitutions = baseSubstitutions.copy()
+        for line in _formatExample(example, substitutions):
+            yield line
+
+    if 'input' in data:
+        for line in _formatSchema(data['input'], True):
+            yield line
+
+    if 'output' in data:
+        for line in _formatSchema(data['output'], False):
+            yield line
+
+
+def makeRst(prefix, section, app, exampleByIdentifier, schema_store):
+    """
+    Generate the sphinx documentation associated with a L{klein} application.
+
+    :param bytes prefix: The URL prefix of the URLs in this application.
+
+    :param unicode section: The section of documentation to generate.
+
+    :param klein.Klein app: The L{klein} application to introspect.
+
+    :param exampleByIdentifier: A one-argument callable that accepts an example
+        identifier and returns an HTTP session example.
+
+    :param dict schema_store: A mapping between schema paths
+        (e.g. ``b/v1/types.json``) and the JSON schema structure.
+
+    :return: A generator yielding the lines of sphinx representing the
+        generated documentation.
+    """
+    # Adapted from sphinxcontrib.autohttp.flask
+    for route in sorted(getRoutes(app)):
+        if route.attributes.get("private_api", False):
+            continue
+        data = _introspectRoute(route, exampleByIdentifier, schema_store)
+        if data['section'] != section:
+            continue
+        for method in route.methods:
+            if data['header'] is not None:
+                yield data['header']
+                yield '-' * len(data['header'])
+                yield ''
+
+            body = _formatRouteBody(data, schema_store)
+            for line in http_directive(method, prefix + route.path, body):
+                yield line
+
+
+def _loadExamples(path):
+    """
+    Read the YAML-format HTTP session examples from the file at the given path.
+
+    @type path: L{FilePath}
+
+    @raise Exception: If any example identifier is used more than once.
+
+    @return: A L{dict} mapping example identifiers to example L{dict}s.
+    """
+    # Load all of the examples so they're available for the loader when we
+    # get there.
+    examplesRaw = safe_load(path.getContent())
+    examplesMap = dict(
+        (example["id"], example)
+        for example in examplesRaw)
+
+    # Avoid duplicate identifiers.
+    if len(examplesRaw) != len(examplesMap):
+        identifiers = [example["id"] for example in examplesRaw]
+        duplicates = list(
+            identifier
+            for (index, identifier)
+            in enumerate(identifiers)
+            if identifiers.index(identifier) != index)
+        raise Exception(
+            "Duplicate identifiers in example file: %r" % (duplicates,))
+    return examplesMap
+
+
+class AutoKleinDirective(Directive):
+    """
+    Implementation of the C{autoklein} directive.
+    """
+    has_content = True
+    required_arguments = 1
+
+    option_spec = {
+        # The URL prefix of the URLs in this application.
+        'prefix': directives.unchanged,
+        # Path to examples YAML file, relative to document which includes
+        # the directive. Using just passed in path is no good, since it's
+        # relative to sphinx-build working directory which may vary.
+        'examples_path': directives.unchanged,
+        # Python import path of schema store.
+        'schema_store_fqpn': directives.unchanged,
+        'section': directives.unchanged,
+        }
+
+    def run(self):
+        schema_store = namedAny(self.options["schema_store_fqpn"])
+
+        appContainer = namedAny(self.arguments[0])
+
+        # This is the path of the file that contains the autoklein directive.
+        src_path = FilePath(self.state_machine.get_source(self.lineno))
+
+        # self.options["examples_path"] is a path relative to the source file
+        # containing it to a file containing examples to include.
+        examples_path = src_path.parent().preauthChild(
+            self.options["examples_path"])
+
+        self._examples = _loadExamples(examples_path)
+
+        # The contents of the example file are included in the output so the
+        # example file is a dependency of the document.
+        self.state.document.settings.record_dependencies.add(
+            examples_path.path)
+
+        # The following three lines record (some?) of the dependencies of the
+        # directive, so automatic regeneration happens.
+
+        # Specifically, it records this file, and the file where the app
+        # is declared.  If we ever have routes for a single app declared
+        # across multiple files, this will need to be updated.
+        appFileName = getsourcefile(appContainer)
+        self.state.document.settings.record_dependencies.add(appFileName)
+        self.state.document.settings.record_dependencies.add(__file__)
+
+        # Copied from sphinxcontrib.autohttp.flask
+        # Return the result of parsing the rst f
+        node = nodes.section()
+        node.document = self.state.document
+        result = ViewList()
+        restLines = makeRst(
+            prefix=self.options['prefix'],
+            section=self.options['section'],
+            app=appContainer.app,
+            exampleByIdentifier=self._exampleByIdentifier,
+            schema_store=schema_store)
+        for line in restLines:
+            result.append(line, '<autoklein>')
+        nested_parse_with_titles(self.state, result, node)
+        return node.children
+
+    def _exampleByIdentifier(self, identifier):
+        """
+        Get one of the examples defined in the examples file.
+        """
+        return self._examples[identifier]
+
+
+def setup(app):
+    """
+    Entry point for sphinx extension.
+    """
+    if 'http' not in app.domains:
+        httpdomain.setup(app)
+    app.add_directive('autoklein', AutoKleinDirective)

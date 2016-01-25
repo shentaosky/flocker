@@ -1,0 +1,16 @@
+[Unit]
+Description=Flocker Control Service
+
+[Service]
+ExecStart=/usr/sbin/flocker-control --port tcp:4523 --agent-port tcp:4524 --journald
+Restart=always
+
+PrivateTmp=true
+PrivateDev=true
+ProtectSystem=true
+ProtectHome=true
+ReadonlyDirectories=/
+ReadWriteDirectories=/var/lib/flocker
+
+[Install]
+WantedBy=multi-user.target

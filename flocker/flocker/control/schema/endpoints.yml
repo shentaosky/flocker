@@ -1,0 +1,221 @@
+$schema: http://json-schema.org/draft-04/schema#
+id: http://api.clusterhq.com/v1/endpoints.json
+definitions:
+  versions:
+    type: object
+    properties:
+      flocker:
+        title: Flocker version
+        description:
+          The software version of Flocker
+        type: string
+    required:
+      - flocker
+    additionalProperties: false
+
+  configuration_container:
+    type: object
+    properties:
+      node_uuid:
+        '$ref': 'types.json#/definitions/container_node_uuid'
+      name:
+        '$ref': 'types.json#/definitions/container_name'
+      image:
+        '$ref': 'types.json#/definitions/container_image'
+      ports:
+        '$ref': 'types.json#/definitions/ports'
+      environment:
+        '$ref': 'types.json#/definitions/environment'
+      restart_policy:
+        '$ref': 'types.json#/definitions/restart_policy'
+      command_line:
+        '$ref': 'types.json#/definitions/command_line'
+      volumes:
+        title: Volumes to attach to the container
+        description: |
+          Volumes to attach to the container. Required keys are "dataset_id" and
+          "mountpoint". For now only one volume per container is supported.
+        type: array
+        items:
+          '$ref': 'types.json#/definitions/volume'
+        minItems: 0
+        maxItems: 1
+      cpu_shares:
+        '$ref': 'types.json#/definitions/cpu_shares'
+      memory_limit:
+        '$ref': 'types.json#/definitions/memory_limit'
+      links:
+        '$ref': 'types.json#/definitions/container_links'
+    required:
+      - node_uuid
+      - name
+      - image
+    additionalProperties: false
+
+  configuration_containers_array:
+    description: "An array of configuration containers."
+    type: array
+    items: {"$ref": "#/definitions/configuration_container" }
+
+  configuration_container_update:
+    description: "The configuration for a named container."
+    type: object
+    properties:
+      node_uuid:
+        '$ref': 'types.json#/definitions/container_node_uuid'
+    required:
+      - node_uuid
+    additionalProperties: false
+
+  node:
+    description: "A known node in the cluster."
+    type: object
+    properties:
+      uuid:
+        '$ref': 'types.json#/definitions/node_uuid'
+    required:
+      - uuid
+    additionalProperties: false
+
+  nodes_array:
+    decription: "An array of known nodes in the cluster."
+    type: array
+    items:
+      type: object
+      properties:
+        host:
+          '$ref': 'types.json#/definitions/node_host'
+        uuid:
+          '$ref': 'types.json#/definitions/node_uuid'
+      required:
+        - uuid
+        - host
+      additionalProperties: false
+
+  state_container:
+    type: object
+    properties:
+      node_uuid:
+        '$ref': 'types.json#/definitions/container_node_uuid'
+      name:
+        '$ref': 'types.json#/definitions/container_name'
+      image:
+        '$ref': 'types.json#/definitions/container_image'
+      ports:
+        '$ref': 'types.json#/definitions/ports'
+      environment:
+        '$ref': 'types.json#/definitions/environment'
+      restart_policy:
+        '$ref': 'types.json#/definitions/restart_policy'
+      command_line:
+        '$ref': 'types.json#/definitions/command_line'
+      volumes:
+        title: Volumes to attach to the container
+        description: |
+          Volumes to attach to the container. Required keys are "dataset_id" and
+          "mountpoint". For now only one volume per container is supported.
+        type: array
+        items:
+          '$ref': 'types.json#/definitions/volume'
+        minItems: 0
+        maxItems: 1
+      cpu_shares:
+        '$ref': 'types.json#/definitions/cpu_shares'
+      memory_limit:
+        '$ref': 'types.json#/definitions/memory_limit'
+      links:
+        '$ref': 'types.json#/definitions/container_links'
+      running:
+        '$ref': 'types.json#/definitions/running'
+    required:
+      - node_uuid
+      - name
+      - image
+      - running
+    additionalProperties: false
+
+  state_containers_array:
+    description: "An array of containers actually present on the cluster."
+    type: array
+    items: {"$ref": "#/definitions/state_container" }
+
+  configuration_datasets:
+    description: |
+      The output schema for the create_dataset and update_dataset and
+      delete_dataset endpoints.
+    "$ref": "types.json#/definitions/dataset_configuration"
+
+  configuration_datasets_update:
+    description: |
+      The input schema for the update_dataset endpoint.
+    "$ref": "types.json#/definitions/dataset_configuration_update"
+
+  configuration_datasets_create:
+    # XXX: The publicapi documentation builder currently fails unless the
+    # schema has a ``type`` attribute and a ``properties`` dictionary.
+    # See: https://clusterhq.atlassian.net/browse/FLOC-1697
+    # XXX: Additionally the validation and publicapi documentation builder
+    # don't provide any way of merging the locally defined attributes
+    # and attributes from a remote reference.
+    # See: https://clusterhq.atlassian.net/browse/FLOC-1698
+    type: object
+    description: |
+      The input schema for the create_dataset endpoint
+    properties: {}
+    allOf:
+      - "$ref": "types.json#/definitions/dataset_configuration"
+      - required:
+          - primary
+
+  configuration_datasets_list:
+    description: |
+      The output schema for the get_dataset_configuration endpoint.
+    type: array
+    items: {"$ref": "types.json#/definitions/dataset_configuration" }
+
+  state_datasets_array:
+    description: "An array of state datasets."
+    type: array
+    items:
+      description: "The state of a particular dataset."
+      type: object
+      properties:
+        primary:
+          '$ref': 'types.json#/definitions/primary'
+        dataset_id:
+          '$ref': 'types.json#/definitions/dataset_id'
+        maximum_size:
+          '$ref': 'types.json#/definitions/maximum_size'
+        path:
+          '$ref': 'types.json#/definitions/node_path'
+      required:
+        - dataset_id
+      additionalProperties: false
+
+  configuration_compose:
+    description: "Private endpoint for flocker-deploy."
+    type: object
+    properties:
+      applications:
+        type: object
+        title: Application configuration
+        description: |
+          Application configuration in Flocker or Fig/Compose format.
+      deployment:
+        type: object
+        title: Application location configuration
+        description: |
+          Configuration of application locations within the cluster.
+    required:
+      - applications
+      - deployment
+    additionalProperties: false
+
+  list_leases:
+    decription: "An array of dataset leases in the cluster."
+    type: array
+    items:
+      '$ref': 'types.json#/definitions/lease'
+
+  lease:
+      '$ref': 'types.json#/definitions/lease'

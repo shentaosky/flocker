@@ -1,0 +1,324 @@
+$schema: http://json-schema.org/draft-04/schema#
+id: http://api.clusterhq.com/v1/types.json
+definitions:
+  uuid:
+    title: "Unique identifer"
+    description: |
+      An opaque identifier, unique across a cluster, identifying a
+      particular dataset or node.  If not specified when creating a dataset, a new
+      identifier will be generated and returned.
+    type: string
+    minLength: 36
+    maxLength: 36
+    # UUIDv4, as defined by RFC 4122. See http://tools.ietf.org/html/rfc4122.html#section-4.1
+    pattern: "^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-4[A-Fa-f0-9]{3}-[89abAB][A-Fa-f0-9]{3}-[A-Fa-f0-9]{12}$"
+
+  dataset_id:
+    title: "Unique identifier"
+    description: |
+      An opaque identifier, unique across the cluster, identifying a
+      particular dataset.  If not given, a new identifier will be generated
+      and returned.
+    type: string
+    allOf:
+      - "$ref": "#/definitions/uuid"
+
+  deleted:
+    title: "Deleted"
+    description: |
+      If true, this dataset has been deleted and its data is no longer
+      guaranteed to exist.
+    type: boolean
+
+  node_path:
+    title: "Node mount path"
+    description: |
+      The filesystem path where the dataset is mounted on a node.
+      Can only be present in cluster state, not in configuration.
+    type: string
+
+  metadata:
+    title: "Data about a dataset"
+    description: |
+      Additional key/value data describing the dataset.  These items are
+      not interpreted by Flocker.  If not given, no metadata will be
+      associated with the new dataset.
+    type: object
+    # We limit the total number of properties and the lengths of the keys
+    # and values of those properties in order to put an upper bound on the
+    # total amount of metadata we're committing to accept and store.  The
+    # particular values in these limits are arbitrary and aren't as
+    # important as just having some "reasonably" small limits.
+    patternProperties:
+      "^.{1,256}$":
+        type: string
+        maxLength: 256
+    maxProperties: 16
+    additionalProperties: false
+
+  memory_limit:
+    title: "Container memory limit"
+    description: "A number specifying the maximum memory in bytes available to this container. Minimum 1048576 (1MB)."
+    type: integer
+    minimum: 1048576
+
+  cpu_shares:
+    title: "Container CPU shares"
+    description: |
+        A number specifying the relative weighting of CPU cycles given to a container.
+        See https://docs.docker.com/reference/run/ for more information.
+    type: integer
+    minimum: 1
+    maximum: 1024
+
+  container_links:
+    title: "Container links"
+    description: |
+        A mapping of links between containers, specifying the local and remote ports.
+        This is implemented by injecting a series of environment variables in to the container that map the alias and local port to the remote port.
+        See https://docs.docker.com/userguide/dockerlinks/#environment-variables for more information on the environment created by container links.
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - alias
+        - local_port
+        - remote_port
+      additionalProperties: false
+      properties:
+        local_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        remote_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        alias:
+          type: string
+          pattern: "^[a-zA-Z0-9]+$"
+    uniqueItems: true
+
+  restart_policy:
+    title: "Container restart policy"
+    type: object
+    description: "Policy for whether or not a container should be restarted after exit."
+    oneOf:
+    - additionalProperties: false
+      properties:
+        maximum_retry_count:
+          minimum: 1
+          type: integer
+        name:
+          enum:
+            - "on-failure"
+          type: string
+      type: object
+      required:
+        - name
+    - additionalProperties: false
+      properties:
+        name:
+          enum:
+            - "never"
+            - "always"
+          type: string
+      type: object
+      required:
+        - name
+
+  ports:
+    title: "Container ports"
+    description: "Mapping of internal to external ports."
+    type: array
+    minItems: 1
+    items:
+      type: object
+      additionalProperties: false
+      properties:
+        internal:
+          type: integer
+        external:
+          type: integer
+    uniqueItems: true
+
+  environment:
+    title: "Container environment variables"
+    description: "Mapping of label and value pairs for environment variables"
+    type: object
+    patternProperties:
+      "^.+$":
+        type: string
+
+  volume:
+    title: "A volume attached to a container"
+    description: |
+      A dataset that has been mounted inside a container.
+    type: object
+    properties:
+      dataset_id:
+        '$ref': '#/definitions/dataset_id'
+      mountpoint:
+        '$ref': '#/definitions/volume_path'
+    required:
+      - 'dataset_id'
+      - 'mountpoint'
+    additionalProperties: false
+
+  volume_path:
+    title: "Volume mount path"
+    description: |
+      The filesystem path where a volume is mounted inside a container.
+    type: string
+    pattern: "^\\/.*$"
+
+  container_name:
+    title: "Container name"
+    description: "The name of the container."
+    type: string
+    pattern: "^/?[a-zA-Z0-9][a-zA-Z0-9_.-]+$"
+
+  container_image:
+    title: "Container image"
+    description: |
+      A standard Docker formatted string specifying the container image
+      and optional tag, e.g. "clusterhq/redis:latest".
+    type: string
+
+  command_line:
+    title: "Command line"
+    description: |
+      Alternate command-line to run using the Docker image's entry point.
+    type: array
+    maxItems: 4096
+    items:
+      type: string
+      maxLength: 4096
+
+  host:
+    title: "Host"
+    description: |
+      The IP address of a node where the container will run.
+      This must be the address of a node that has introduced itself
+      to the cluster.
+    type: string
+    oneOf:
+      - format: ipv4
+
+  node_host:
+    title: "Host"
+    description: |
+      The IP address of a node in the cluster.
+    type: string
+    oneOf:
+      - format: ipv4
+
+  node_uuid:
+    title: "Node"
+    description: |
+      The UUID of a node in the cluster.
+    type: string
+    allOf:
+      - "$ref": "#/definitions/uuid"
+
+  container_node_uuid:
+    title: "Node"
+    description: |
+      The UUID of a node in the cluster where the container will run.
+    type: string
+    allOf:
+      - "$ref": "#/definitions/uuid"
+
+  primary:
+    title: "Primary manifestation (node UUID)"
+    description: |
+      The UUID of the node which will be given the primary manifestation
+      of the newly created dataset.
+    type: string
+    allOf:
+      - "$ref": "#/definitions/uuid"
+
+  maximum_size:
+    title: "Maximum size"
+    description: |
+      The upper limit on how much data the dataset will be allowed to
+      store, as an integer number of bytes.
+    type:
+      - "number"
+      - "null"
+    # 64 MiB.  Sort of an arbitrary limit but inspired by the lower bound
+    # on what this can be set to for the ZFS backend.  Could probably be
+    # considered more carefully.
+    minimum: 67108864
+    # Filesystem initialization in the block device backend requires sizes to
+    # be a multiple of 512 and for ease of implementation we'll tighten that
+    # constraint so it's multiples of 1024 (1 KiB).
+    multipleOf: 1024
+
+
+  running:
+    title: "Running"
+    description: |
+      Whether or not the container is currently running.
+    type: boolean
+
+  dataset_configuration:
+    title: "Dataset Configuration"
+    description: "The configuration for a particular dataset."
+    type: object
+    properties:
+      primary:
+        '$ref': '#/definitions/primary'
+      dataset_id:
+        '$ref': '#/definitions/dataset_id'
+      deleted:
+        '$ref': '#/definitions/deleted'
+      metadata:
+        '$ref': '#/definitions/metadata'
+      maximum_size:
+        '$ref': '#/definitions/maximum_size'
+    additionalProperties: false
+
+  dataset_configuration_update:
+    title: "Dataset Configuration"
+    description: "The configuration for a particular dataset."
+    type: object
+    properties:
+      primary:
+        '$ref': '#/definitions/primary'
+    additionalProperties: false
+
+  lease_expiration:
+    title: "Lease Expiration"
+    description: |
+      The number of seconds until a lease expires, or null to indicate no expiration.
+    type:
+      - "number"
+      - "null"
+
+  lease_dataset_id:
+    title: "Dataset"
+    description: |
+      An opaque identifier, unique across the cluster, identifying a
+      particular dataset.
+    type: string
+    # The length of a stringified uuid
+    minLength: 36
+    maxLength: 36
+
+  lease:
+    type: object
+    description: "A lease on a dataset indicating it is in use on a particular node."
+    properties:
+      dataset_id:
+        '$ref': '#/definitions/lease_dataset_id'
+      node_uuid:
+        '$ref': '#/definitions/node_uuid'
+      expires:
+        '$ref': '#/definitions/lease_expiration'
+    required:
+      - 'dataset_id'
+      - 'node_uuid'
+      - 'expires'
+    additionalProperties: false
