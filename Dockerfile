@@ -2,17 +2,16 @@ FROM        centos:7
 
 MAINTAINER  MENG YANG "yang.meng@transwarp.io"
 
-WORKDIR /root
+WORKDIR     /root
 
 # install epel
 RUN         yum repolist && yum update -y
 
 # instatll base package
-# RUN yum groupinstall -y "base"
 RUN         yum install -y epel-release
 
 # install tools
-RUN         yum install -y epel-release openssh-server redhat-lsb
+RUN         yum install -y openssh-server redhat-lsb
 
 # install zfs
 RUN         yum localinstall -y --nogpgcheck https://download.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm && \
@@ -20,19 +19,22 @@ RUN         yum localinstall -y --nogpgcheck https://download.fedoraproject.org/
             yum install -y kernel-devel zfs
 
 # install flocker
-RUN         yum list installed clusterhq-release || yum install -y https://clusterhq-archive.s3.amazonaws.com/centos/clusterhq-release$(rpm -E %dist).noarch.rpm && \
-            yum install -y clusterhq-flocker-node clusterhq-flocker-docker-plugin
+ENV         FLOCKER_VERSION 1.9.0-1
+RUN         yum install -y wget git python-devel libffi-devel openssl-devel
+RUN         mkdir /worksapce
+WORKDIR     /worksapce
+RUN         wget https://bootstrap.pypa.io/get-pip.py && \
+            python get-pip.py
+RUN         git clone https://github.com/ClusterHQ/flocker.git
+WORKDIR     /worksapce/flocker
+RUN         git checkout -b 1.9.0_LC 1.9.0
+RUN         pip install -r requirements.txt
+RUN         python setup.py install --root /
 
-# just for debug
-RUN         yum install -y vim
+# generate ssh key
 RUN         /usr/sbin/sshd-keygen; ssh-keygen -N "" -f /root/.ssh/id_rsa && cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
 
-# config
-VOLUME      ["/etc/flocker"]
-VOLUME      ["/var/lib/flocker"]
-VOLUME      ["/flocker"]
-VOLUME      ["/var/run/docker/plugins/"]
-
 # copy bootstrap.sh
+WORKDIR     /
 COPY        bootstrap.sh /usr/local/bin/
 RUN         chmod +x /usr/local/bin/bootstrap.sh
