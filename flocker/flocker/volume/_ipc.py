@@ -42,7 +42,7 @@ def standard_node(hostname):
     :param bytes hostname: The host to connect to.
     :return: A ``INode`` that can connect to the given hostname using SSH.
     """
-    return ProcessNode.using_ssh(hostname, 22, b"root", SSH_PRIVATE_KEY_PATH)
+    return ProcessNode.using_ssh(hostname, 2022, b"root", SSH_PRIVATE_KEY_PATH)
 
 
 class IRemoteVolumeManager(Interface):
