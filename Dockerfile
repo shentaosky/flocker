@@ -25,14 +25,13 @@ RUN         mkdir /worksapce
 WORKDIR     /worksapce
 RUN         wget https://bootstrap.pypa.io/get-pip.py && \
             python get-pip.py
-RUN         git clone https://github.com/ClusterHQ/flocker.git
-WORKDIR     /worksapce/flocker
-RUN         git checkout -b 1.9.0_LC 1.9.0
-RUN         pip install -r requirements.txt
-RUN         python setup.py install --root /
 
-# generate ssh key
-RUN         /usr/sbin/sshd-keygen; ssh-keygen -N "" -f /root/.ssh/id_rsa && cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+# install require package in seperate step to accelerate rebuild
+ADD         flocker/requirements.txt /root/flocker/
+RUN         pip install -r /root/flocker/requirements.txt 
+
+ADD         flocker /root/flocker
+RUN         pushd /root/flocker && python setup.py install --root /; popd
 
 # copy bootstrap.sh
 WORKDIR     /
