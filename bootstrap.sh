@@ -32,7 +32,7 @@ pushd $FLOCKER_DIR
 #set -e
 
 # require /etc/flocker/cluster.crt to generate keys
-for file in $CLUSTER_CRT $AGENT_YML
+for file in $CLUSTER_CRT
 do
   [ -f $file ] || {
     echo "${FLOCKER_DIR}/${file} is missing, exit now"
@@ -60,7 +60,7 @@ case $1 in
     chmod 600 node.*
   ;;
   flocker-container-agent)
-    while i in `seq 1 100`
+    for i in `seq 1 100`
     do
       [ -f $NODE_CRT ] && break
       echo "waiting $NODE_CRT to become available"
@@ -68,7 +68,7 @@ case $1 in
     done
   ;;
   flocker-docker-plugin)
-    while i in `seq 1 100`
+    for i in `seq 1 100`
     do
       [ -f $NODE_CRT ] && break
       echo "waiting $NODE_CRT to become available"
