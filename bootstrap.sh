@@ -51,6 +51,10 @@ case $1 in
     chmod 600 control-service.*
   ;;
   flocker-dataset-agent)
+    [ -f $AGENT_YML ] || {
+      echo "$AGENT_YML is missing"
+      exit 1
+    }
     # create node crt if not exist 
     [ -f $NODE_CRT ] || {
       node_crt=`flocker-ca create-node-certificate |cut -d " " -f 2|cut -d "." -f 1`
