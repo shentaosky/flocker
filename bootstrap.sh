@@ -50,16 +50,30 @@ case $1 in
     }
     chmod 600 control-service.*
   ;;
-  flocker-dataset-agent|flocker-container-agent)
+  flocker-dataset-agent)
     # create node crt if not exist 
     [ -f $NODE_CRT ] || {
-      node_crt=`flocker-ca create-control-certificate $HOSTNAME |cut -d " " -f 2|cut -d "." -f 1`
+      node_crt=`flocker-ca create-node-certificate |cut -d " " -f 2|cut -d "." -f 1`
       mv ${node_crt}.crt node.crt
       mv ${node_crt}.key node.key
     }
     chmod 600 node.*
   ;;
+  flocker-container-agent)
+    while i in `seq 1 100`
+    do
+      [ -f $NODE_CRT ] && break
+      echo "waiting $NODE_CRT to become available"
+      sleep 5
+    done
+  ;;
   flocker-docker-plugin)
+    while i in `seq 1 100`
+    do
+      [ -f $NODE_CRT ] && break
+      echo "waiting $NODE_CRT to become available"
+      sleep 5
+    done
     # all docker-plugin share the same crt
     [ -f $PLUGIN_CRT ] || {
       echo "$PLUGIN_CRT missing, exit now"
@@ -74,6 +88,8 @@ esac
 
 # run the command
 $1 $FLOCKER_OPTS
+
+set +x
 
 [ $DEBUG -eq 1 ] && {
   echo "Waiting for debug before exit"
