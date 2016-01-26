@@ -3,6 +3,7 @@
 # certifications names 
 FLOCKER_DIR=/etc/flocker
 CLUSTER_CRT=cluster.crt
+CLUSTER_KEY=cluster.key
 PLUGIN_CRT=plugin.crt
 NODE_CRT=node.crt
 CONTROLL_CRT=control-service.crt
@@ -31,8 +32,8 @@ set -x
 pushd $FLOCKER_DIR
 #set -e
 
-# require /etc/flocker/cluster.crt to generate keys
-for file in $CLUSTER_CRT
+# require /etc/flocker/cluster.{crt,key} to generate keys
+for file in $CLUSTER_CRT $CLUSTER_KEY
 do
   [ -f $file ] || {
     echo "${FLOCKER_DIR}/${file} is missing, exit now"
@@ -83,6 +84,9 @@ case $1 in
       echo "$PLUGIN_CRT missing, exit now"
       exit 1
     }
+    # clean up existing  plugin file
+    [ -f /run/docker/plugins/flocker/flocker.sock ] && rm /run/docker/plugin/flocker/flocker.sock* -f
+    [ -f /var/run/docker/plugins/flocker/flocker.sock ] && rm /var/run/docker/plugin/flocker/flocker.sock* -f
   ;;
   *)
     usage
