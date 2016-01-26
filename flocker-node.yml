@@ -16,7 +16,7 @@ flocker-dataset-agent:
 
 flocker-sshd:
   image: 172.16.1.41:5000/stefan/transwarp-flocker:test
-  command: /usr/sbin/sshd -D -p 2022
+  command: /bin/bash -c "chmod 0600 /etc/ssh/*key; /usr/sbin/sshd -D -p 2022"
   net: "host"
   privileged: true
   devices:
