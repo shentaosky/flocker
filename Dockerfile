@@ -20,7 +20,7 @@ RUN         yum localinstall -y --nogpgcheck https://download.fedoraproject.org/
 
 # install flocker
 ENV         FLOCKER_VERSION 1.9.0-1
-RUN         yum install -y wget git python-devel libffi-devel openssl-devel
+RUN         yum install -y wget git python-devel libffi-devel openssl-devel iptables
 RUN         mkdir /worksapce
 WORKDIR     /worksapce
 RUN         wget https://bootstrap.pypa.io/get-pip.py && \
