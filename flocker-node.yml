@@ -51,7 +51,7 @@ flocker-docker-plugin:
   privileged: true
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
-    - /run/docker/plugins/flocker/:/var/run/docker/plugins/flocker/
+    - /run/docker/plugins/flocker/:/run/docker/plugins/flocker/
     - /flocker/:/flocker/:shared
     - /etc/flocker/:/etc/flocker/
     - /var/run/docker:/var/run/docker
