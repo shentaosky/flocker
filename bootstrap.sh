@@ -3,7 +3,7 @@
 # certifications names 
 FLOCKER_DIR=/etc/flocker
 CLUSTER_CRT=cluster.crt
-CLUSTER_KEY=cluster.key
+#CLUSTER_KEY=cluster.key
 PLUGIN_CRT=plugin.crt
 NODE_CRT=node.crt
 CONTROLL_CRT=control-service.crt
@@ -33,7 +33,7 @@ pushd $FLOCKER_DIR
 #set -e
 
 # require /etc/flocker/cluster.{crt,key} to generate keys
-for file in $CLUSTER_CRT $CLUSTER_KEY
+for file in $CLUSTER_CRT
 do
   [ -f $file ] || {
     echo "${FLOCKER_DIR}/${file} is missing, exit now"
@@ -43,46 +43,32 @@ done
 
 case $1 in
   flocker-control)
-    # create control crt
     [ -f $CONTROLL_CRT ] || {
-      flocker-ca create-control-certificate $HOSTNAME
-      mv control-${HOSTNAME}.crt control-service.crt 
-      mv control-${HOSTNAME}.key control-service.key
+      echo "$CONTROLL_CRT is missing"
     }
     chmod 600 control-service.*
   ;;
   flocker-dataset-agent)
     [ -f $AGENT_YML ] || {
       echo "$AGENT_YML is missing"
-      exit 1
     }
-    # create node crt if not exist 
     [ -f $NODE_CRT ] || {
-      node_crt=`flocker-ca create-node-certificate |cut -d " " -f 2|cut -d "." -f 1`
-      mv ${node_crt}.crt node.crt
-      mv ${node_crt}.key node.key
+      echo "$NODE_CRT is missing"
     }
     chmod 600 node.*
   ;;
   flocker-container-agent)
-    for i in `seq 1 100`
-    do
-      [ -f $NODE_CRT ] && break
-      echo "waiting $NODE_CRT to become available"
-      sleep 5
-    done
+    [ -f $NODE_CRT ] || {
+      echo "$NODE_CRT is missing"
+    }
   ;;
   flocker-docker-plugin)
-    for i in `seq 1 100`
-    do
-      [ -f $NODE_CRT ] && break
-      echo "waiting $NODE_CRT to become available"
-      sleep 5
-    done
+    [ -f $NODE_CRT ] || {
+      echo "$NODE_CRT is missing"
+    }
     # all docker-plugin share the same crt
     [ -f $PLUGIN_CRT ] || {
-      echo "$PLUGIN_CRT missing, exit now"
-      exit 1
+      echo "$PLUGIN_CRT is missing"
     }
     # clean up existing plugin file
     [ -f /run/docker/plugins/flocker/flocker.sock ] && rm /run/docker/plugins/flocker/flocker.sock* -f
