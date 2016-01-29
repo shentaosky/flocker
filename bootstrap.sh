@@ -73,8 +73,8 @@ case $1 in
       echo "$PLUGIN_CRT is missing"
     }
     # clean up existing plugin file
-    [ -f /run/docker/plugins/flocker/flocker.sock ] && rm /run/docker/plugins/flocker/flocker.sock* -f
-    [ -f /var/run/docker/plugins/flocker/flocker.sock ] && rm /var/run/docker/plugins/flocker/flocker.sock* -f
+    [ -e /run/docker/plugins/flocker/flocker.sock ] && rm -f /run/docker/plugins/flocker/flocker.sock*
+    [ -e /var/run/docker/plugins/flocker/flocker.sock ] && rm -f /var/run/docker/plugins/flocker/flocker.sock*
   ;;
   *)
     usage
