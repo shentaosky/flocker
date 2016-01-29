@@ -14,6 +14,8 @@ AGENT_YML=agent.yml
 
 HOSTNAME=`hostname`
 
+DEBUG=${DEBUG:-"0"}
+
 FLOCKER_OPTS=${FLOCKER_OPTS:-""}
 
 usage()
