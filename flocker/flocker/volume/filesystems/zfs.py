@@ -33,7 +33,6 @@ from .interfaces import (
     FilesystemAlreadyExists)
 
 from .._model import VolumeSize
-from ..service import VolumeName
 from uuid import UUID, uuid4
 
 
@@ -270,7 +269,6 @@ class Filesystem(object):
 
     def parse_name(self):
         node_id, dataset_id = self.dataset.split(b".", 1)
-        dataset_id = VolumeName.from_bytes(dataset_id)
         # We convert to a UUID object for validation purposes:
         UUID(node_id)
         self._node_id = node_id
