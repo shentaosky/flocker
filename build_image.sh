@@ -10,11 +10,14 @@ usage() {
 usage: $0 <options>
 require:
      -t IMAGE_TAG                 docker image tag
+     -p PULL ON BUILD             pull image on build
      -r DOCKER_REGISTRY           prefix of docker image name, so images can be push to remote registry
 optional:
   "
   exit 1
 }
+
+PULL=false
 
 until [ $# -eq 0 ]
 do
@@ -26,6 +29,9 @@ do
     -r )
       DOCKER_REGISTRY=$2
       shift 2
+    ;;
+    -p )
+      PULL=true
     ;;
     * )
       usage
@@ -43,7 +49,7 @@ DOCKER_REGISTRY=${DOCKER_REGISTRY:-"172.16.1.41:5000"}
 }
 
 #=======================================================================================================
-docker build --pull=true -t $IMAGE_TAG . || {
+docker build --pull=$PULL -t $IMAGE_TAG . || {
   echo "Build Docker Images $IMAGE_TAG failed"
   exit 1
 }
