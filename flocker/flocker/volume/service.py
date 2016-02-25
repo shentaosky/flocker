@@ -19,7 +19,7 @@ from characteristic import attributes
 from twisted.internet.defer import maybeDeferred
 from twisted.python.filepath import FilePath
 from twisted.application.service import Service
-from twisted.internet.defer import fail
+from twisted.internet.defer import fail, succeed
 
 # We might want to make these utilities shared, rather than in zfs
 # module... but in this case the usage is temporary and should go away as
@@ -272,7 +272,11 @@ class VolumeService(Service):
         if volume.node_id != self.node_id:
             raise ValueError()
         fs = volume.get_filesystem()
-        getting_snapshots = destination.snapshots(volume)
+        # if failed on getting snapshots, which is caused by rename failed, retry on next iteration
+        try:
+            getting_snapshots = destination.snapshots(volume)
+        except IOError as err:
+            return succeed([])
 
         def got_snapshots(snapshots):
             with destination.receive(volume) as receiver:

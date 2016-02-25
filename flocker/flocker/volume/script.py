@@ -60,6 +60,8 @@ def flocker_volume_options(cls):
     return cls
 
 
+
+
 class _SnapshotsSubcommandOptions(Options):
     """
     Command line options for ``flocker-volume snapshots``.
@@ -79,6 +81,9 @@ class _SnapshotsSubcommandOptions(Options):
         self["name"] = name
 
     def run(self, service):
+
+        # get and delete local dataset if datasets is not locally own either by sender or receiver
+
         volume = Volume(node_id=self["node_id"],
                         name=VolumeName.from_bytes(self["name"]),
                         service=service)

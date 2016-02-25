@@ -10,3 +10,8 @@ class MaximumSizeTooSmall(Exception):
     A maximum size was specified for a filesystem which is smaller than the
     smallest allowed value.
     """
+
+class RenameDatasetFail(Exception):
+    """
+    Failed to rename a dataset
+    """

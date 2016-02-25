@@ -23,16 +23,18 @@ from twisted.python.failure import Failure
 from twisted.python.filepath import FilePath
 from twisted.internet.endpoints import ProcessEndpoint, connectProtocol
 from twisted.internet.protocol import Protocol
-from twisted.internet.defer import Deferred, succeed, gatherResults
+from twisted.internet.defer import Deferred, succeed, fail, gatherResults
 from twisted.internet.error import ConnectionDone, ProcessTerminated
 from twisted.application.service import Service
 
-from .errors import MaximumSizeTooSmall
+from .errors import MaximumSizeTooSmall, RenameDatasetFail
 from .interfaces import (
     IFilesystemSnapshots, IStoragePool, IFilesystem,
     FilesystemAlreadyExists)
 
 from .._model import VolumeSize
+from ..service import VolumeName
+from uuid import UUID, uuid4
 
 
 class CommandFailed(Exception):
@@ -171,7 +173,7 @@ class Filesystem(object):
     implementation over time.
     """
     def __init__(self, pool, dataset, mountpoint=None, size=None,
-                 reactor=None):
+                 reactor=None, node_id=None, dataset_id=None):
         """
         :param pool: The filesystem's pool name, e.g. ``b"hpool"``.
 
@@ -191,6 +193,9 @@ class Filesystem(object):
             from twisted.internet import reactor
         self._reactor = reactor
 
+        self._node_id = node_id
+        self._dataset_id = dataset_id
+
     def _exists(self):
         """
         Determine whether this filesystem exists locally.
@@ -205,13 +210,52 @@ class Filesystem(object):
         return True
 
     def snapshots(self):
-        if self._exists():
+        def list_snapshots():
             zfs_snapshots = ZFSSnapshots(self._reactor, self)
             d = zfs_snapshots.list()
             d.addCallback(lambda snapshots:
                           [Snapshot(name=name)
                            for name in snapshots])
             return d
+
+        if self._exists():
+            return list_snapshots()
+        else:
+            # rename dataset that are not locally owned or remotely owned
+            filesystems = _list_filesystems(self._reactor, self.pool)
+            filesystems.addCallback(_listed, self.pool)
+
+            def find_dataset(fs):
+                sets = []
+                for filesystem in fs:
+                    node_id, dataset_id = filesystem.parse_name
+                    if dataset_id == self._dataset_id:
+                        sets.append(filesystem.get_path)
+                return sets
+            filesystems.addCallback(find_dataset)
+
+            # if rename failed, just return fail, and retry on next iteration
+            # assume on receiver side, the dataset is not in use
+            def rename_failed(id):
+                return Failure(RenameDatasetFail())
+
+            # return snapshots if succeed
+            def rename_succeed():
+                return list_snapshots()
+
+            def rename_dataset(datasets):
+                # if dataset is empty, just return succeed
+                if len(datasets) == 0:
+                    return succeed([])
+                if len(datasets) > 1:
+                    return fail([b"multiple dataset existed for %d " % self._dataset_id])
+                dataset_name = b"%s/%s" % (self.pool, datasets[0])
+                d = zfs_command(self._reactor, [b"rename", dataset_name, self.name])
+                d.addCallbacks(rename_succeed(), rename_failed(self.name))
+                return d
+            filesystems.addCallback(rename_dataset)
+            return filesystems
+
         return succeed([])
 
     @property
@@ -223,6 +267,15 @@ class Filesystem(object):
 
     def get_path(self):
         return self._mountpoint
+
+    def parse_name(self):
+        node_id, dataset_id = self.dataset.split(b".", 1)
+        dataset_id = VolumeName.from_bytes(dataset_id)
+        # We convert to a UUID object for validation purposes:
+        UUID(node_id)
+        self._node_id = node_id
+        self._dataset_id = dataset_id
+        return (node_id, dataset_id)
 
     @contextmanager
     def reader(self, remote_snapshots=None):
@@ -258,11 +311,12 @@ class Filesystem(object):
         latest_common_snapshot = _latest_common_snapshot(
             remote_snapshots, local_snapshots)
 
+        # use -I and -R filed to transfer itermediat snapshots
         if latest_common_snapshot is None:
-            identifier = [snapshot]
+            identifier = [b"-R", snapshot]
         else:
             identifier = [
-                b"-i",
+                b"-I",
                 u"{}@{}".format(
                     self.name, latest_common_snapshot.name).encode("ascii"),
                 snapshot,
@@ -389,6 +443,7 @@ def _parse_snapshots(data, filesystem):
     result = []
     for line in data.splitlines():
         dataset, snapshot = line.split(b'@', 1)
+        print line
         if dataset == filesystem.name:
             result.append(snapshot)
     return result
@@ -618,17 +673,7 @@ class StoragePool(Service):
 
     def enumerate(self):
         listing = _list_filesystems(self._reactor, self._name)
-
-        def listed(filesystems):
-            result = set()
-            for entry in filesystems:
-                filesystem = Filesystem(
-                    self._name, entry.dataset, FilePath(entry.mountpoint),
-                    VolumeSize(maximum_size=entry.refquota))
-                result.add(filesystem)
-            return result
-
-        return listing.addCallback(listed)
+        return listing.addCallback(_listed, self._name)
 
 
 @attributes(["dataset", "mountpoint", "refquota"], apply_immutable=True)
@@ -641,6 +686,16 @@ class _DatasetInfo(object):
     :ivar int refquota: The value of the dataset's ``refquota`` property (the
         maximum number of bytes the dataset is allowed to have a reference to).
     """
+
+
+def _listed(filesystems, pool):
+    result = set()
+    for entry in filesystems:
+        filesystem = Filesystem(
+            pool, entry.dataset, FilePath(entry.mountpoint),
+            VolumeSize(maximum_size=entry.refquota))
+        result.add(filesystem)
+    return result
 
 
 def _list_filesystems(reactor, pool):
