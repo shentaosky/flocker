@@ -172,7 +172,7 @@ class Filesystem(object):
     implementation over time.
     """
     def __init__(self, pool, dataset, mountpoint=None, size=None,
-                 reactor=None, node_id=None, dataset_id=None):
+                 reactor=None):
         """
         :param pool: The filesystem's pool name, e.g. ``b"hpool"``.
 
@@ -192,8 +192,7 @@ class Filesystem(object):
             from twisted.internet import reactor
         self._reactor = reactor
 
-        self._node_id = node_id
-        self._dataset_id = dataset_id
+        self._node_id, self._dataset_id = self.parse_name()
 
     def _exists(self):
         """
@@ -225,21 +224,21 @@ class Filesystem(object):
             filesystems.addCallback(_listed, self.pool)
 
             def find_dataset(fs):
-                sets = []
+                results = []
                 for filesystem in fs:
-                    node_id, dataset_id = filesystem.parse_name
+                    node_id, dataset_id = filesystem.parse_name()
                     if dataset_id == self._dataset_id:
-                        sets.append(filesystem.get_path)
-                return sets
+                        results.append(filesystem)
+                return results
             filesystems.addCallback(find_dataset)
 
             # if rename failed, just return fail, and retry on next iteration
             # assume on receiver side, the dataset is not in use
-            def rename_failed(id):
-                return Failure(RenameDatasetFail())
+            def rename_failed(err):
+                return Failure(RenameDatasetFail(err))
 
             # return snapshots if succeed
-            def rename_succeed():
+            def rename_succeed(id):
                 return list_snapshots()
 
             def rename_dataset(datasets):
@@ -248,9 +247,8 @@ class Filesystem(object):
                     return succeed([])
                 if len(datasets) > 1:
                     return fail([b"multiple dataset existed for %d " % self._dataset_id])
-                dataset_name = b"%s/%s" % (self.pool, datasets[0])
-                d = zfs_command(self._reactor, [b"rename", dataset_name, self.name])
-                d.addCallbacks(rename_succeed(), rename_failed(self.name))
+                d = zfs_command(self._reactor, [b"rename", datasets[0].name, self.name])
+                d.addCallbacks(rename_succeed, rename_failed)
                 return d
             filesystems.addCallback(rename_dataset)
             return filesystems
@@ -441,7 +439,6 @@ def _parse_snapshots(data, filesystem):
     result = []
     for line in data.splitlines():
         dataset, snapshot = line.split(b'@', 1)
-        print line
         if dataset == filesystem.name:
             result.append(snapshot)
     return result
