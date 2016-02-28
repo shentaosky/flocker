@@ -30,7 +30,7 @@ from twisted.python.reflect import namedAny
 
 from ..volume.filesystems import zfs
 from ..volume.service import (
-    VolumeService, DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT, FLOCKER_POOL)
+    VolumeService, DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT, FLOCKER_POOL, FlockerPoolConfig)
 
 from ..common.script import (
     ICommandLineScript,
@@ -208,6 +208,20 @@ def validate_configuration(configuration):
                     "backend": {
                         "type": "string",
                     },
+                    "pools:": {
+                        "type": "array",
+                        "items": {
+                            "type": {
+                                "mountpoint": {
+                                    "type": "string",
+                                },
+                                "type": {
+                                    "type": "string",
+                                },
+                            }
+                        },
+                        "minItems": 1,
+                    }
                 },
                 "required": [
                     "backend",
@@ -366,33 +380,31 @@ def get_configuration(options):
 
 
 def _zfs_storagepool(
-        reactor, pool=FLOCKER_POOL, mount_root=None, volume_config_path=None):
+        reactor, pools_config, volume_config_path=None):
     """
     Create a ``VolumeService`` with a ``zfs.StoragePool``.
 
-    :param pool: The name of the ZFS storage pool to use.
-    :param bytes mount_root: The path to the directory where ZFS filesystems
-        will be mounted.
+    :param pools: The name of the ZFS storage pool to use.
     :param bytes volume_config_path: The path to the volume service's
         configuration file.
 
     :return: The ``VolumeService``, started.
     """
-    if mount_root is None:
-        mount_root = FLOCKER_MOUNTPOINT
-    else:
-        mount_root = FilePath(mount_root)
+
     if volume_config_path is None:
         config_path = DEFAULT_CONFIG_PATH
     else:
         config_path = FilePath(volume_config_path)
 
-    pool = zfs.StoragePool(
-        reactor=reactor, name=pool, mount_root=mount_root,
-    )
+    pool_configs = []
+    for pool in pools_config.pop[b"pools"]:
+        pool_configs.append(FlockerPoolConfig(name=pool[b"name"], mountpoint=pool[b"mountpoint"],type=pool[b"type"]))
+
+    zfs_pools = zfs.get_storagepools(reactor, pool_configs)
+
     api = VolumeService(
         config_path=config_path,
-        pool=pool,
+        pools=zfs_pools,
         reactor=reactor,
     )
     api.startService()

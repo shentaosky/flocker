@@ -10,6 +10,7 @@ from __future__ import absolute_import
 import sys
 import json
 import stat
+import yaml
 from uuid import UUID, uuid4
 
 from zope.interface import Interface, implementer
@@ -27,12 +28,36 @@ from twisted.internet.defer import fail, succeed
 from .filesystems.zfs import StoragePool
 from ._model import VolumeSize
 from ..common.script import ICommandLineScript
+from ..node.script import validate_configuration
 
 DEFAULT_CONFIG_PATH = FilePath(b"/etc/flocker/volume.json")
 FLOCKER_MOUNTPOINT = FilePath(b"/flocker")
 FLOCKER_POOL = b"flocker"
 
+DEFAULT_AGENT_CONFIGFILE = b"/etc/flocker/agent.yml"
+AGENT_CONFIG = FilePath(DEFAULT_AGENT_CONFIGFILE)
+
 WAIT_FOR_VOLUME_INTERVAL = 0.1
+
+class FlockerPoolConfig(object):
+    """
+    Config of zfs storage pool
+    """
+    def __init__(self, name=b"flocker", mountpoint=b"/flocker", type=b"hhd"):
+        self.name = name
+        self.mountpoint = mountpoint
+        self.type = type
+
+class StorageType():
+    """
+    Storage Type in flocker.
+    """
+    # Gold
+    GOLD = b"gold"
+    # Seliver
+    SILVER = b"silver"
+    # BRONZE
+    BRONZE = b"bronze"
 
 
 class CreateConfigurationError(Exception):
@@ -100,17 +125,25 @@ class VolumeService(Service):
         volume manager. Only available once the service has started.
     """
 
-    def __init__(self, config_path, pool, reactor):
+    def __init__(self, config_path, pools, reactor):
         """
         :param FilePath config_path: Path to the volume manager config file.
-        :param pool: An object that is both a
+        :param pools: An List of object that is both a
             ``flocker.volume.filesystems.interface.IStoragePool`` provider
             and a ``twisted.application.service.IService`` provider.
         :param reactor: A ``twisted.internet.interface.IReactorTime`` provider.
         """
         self._config_path = config_path
-        self.pool = pool
+        self.pools = pools
         self._reactor = reactor
+
+    def get_pool(self, volume):
+        # return default pools
+        if len(self.pools) == 1:
+            return self.pools[0]
+        for pool in self.pools:
+            if pool.type == volume.type:
+                return pool
 
     def startService(self):
         Service.startService(self)
@@ -126,7 +159,8 @@ class VolumeService(Service):
             raise CreateConfigurationError(e.args[1])
         config = json.loads(self._config_path.getContent())
         self.node_id = config[u"uuid"]
-        self.pool.startService()
+        for pool in self.pools:
+            pool.startService()
 
     def create(self, volume):
         """
@@ -139,7 +173,7 @@ class VolumeService(Service):
         """
         # XXX Consider changing the type of volume to a volume model object.
         # FLOC-1062
-        d = self.pool.create(volume)
+        d = self.get_pool(volume).create(volume)
 
         def created(filesystem):
             self._make_public(filesystem)
@@ -156,7 +190,7 @@ class VolumeService(Service):
 
         :return: A ``Deferred`` that fires with a :class:`Volume`.
         """
-        d = self.pool.set_maximum_size(volume)
+        d = self.get_pool(volume).set_maximum_size(volume)
 
         def resized(filesystem):
             return volume
@@ -174,7 +208,7 @@ class VolumeService(Service):
         :return: A ``Deferred`` that fires with a :class:`Volume`.
         """
         volume = self.get(name)
-        d = self.pool.clone_to(parent, volume)
+        d = self.get_pool(volume).clone_to(parent, volume)
 
         def created(filesystem):
             self._make_public(filesystem)
@@ -357,8 +391,10 @@ class VolumeService(Service):
         return changing_owner
 
 
-@attributes(["node_id", "name", "service", "size"],
-            defaults=dict(size=VolumeSize(maximum_size=None)))
+@attributes(["node_id", "name", "service", "size", "pool", "type"],
+            defaults=dict(size=VolumeSize(maximum_size=None),
+                          pool=None,
+                          type=b"hdd"))
 class Volume(object):
     """
     A data volume's identifier.
@@ -388,8 +424,8 @@ class Volume(object):
             instance once the ownership has been changed.
         """
         new_volume = Volume(node_id=new_owner_id, name=self.name,
-                            service=self.service, size=self.size)
-        d = self.service.pool.change_owner(self, new_volume)
+                            service=self.service, size=self.size, type=self.type)
+        d = self.service.get_pool(self).change_owner(self, new_volume)
 
         def filesystem_changed(_):
             return new_volume
@@ -401,7 +437,23 @@ class Volume(object):
 
         :return: The ``IFilesystem`` provider for the volume.
         """
-        return self.service.pool.get(self)
+        return self.service.get_pool(self).get(self)
+
+    def get_pool(self):
+        """
+        Return volume's storage pool
+        :return: "The ``StroagePool`` for this volume"
+        """
+        if self.pool == None:
+            self.pool = self.service.get_pool(self)
+        return self.pool
+
+    def get_type(self):
+        """
+        Return volume's storage type
+        :return A String representing the storage type
+        """
+        return type
 
 
 @implementer(ICommandLineScript)
@@ -423,10 +475,22 @@ class VolumeScript(object):
 
         :return: The started ``VolumeService``.
         """
-        pool = StoragePool(reactor, options["pool"],
-                           FilePath(options["mountpoint"]))
+        # read agent.yml from config and validate pool name
+        cls.pool_name=options["pool"]
+        configs = validate_configuration(yaml.safe_load(AGENT_CONFIG.getContent()))
+        pools = list(pool.name for pool in configs[b"dataset"][b"pools"]
+                               if pool.name == cls.pool_name)
+
+        if len(pools) is not 1:
+            stderr.write(
+                b"pool %s is not properly configied in %s" % (cls.pool_name, DEFAULT_AGENT_CONFIGFILE)
+            )
+            raise SystemExit(1)
+
+        pool = StoragePool(reactor, cls.pool_name)
+
         service = cls._service_factory(
-            config_path=options["config"], pool=pool, reactor=reactor)
+            config_path=options["config"], pools=[pool], reactor=reactor)
         try:
             service.startService()
         except CreateConfigurationError as e:

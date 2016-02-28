@@ -8,7 +8,6 @@ from __future__ import absolute_import
 
 import os
 from contextlib import contextmanager
-from uuid import uuid4
 from subprocess import (
     CalledProcessError, STDOUT, PIPE, Popen, check_call, check_output
 )
@@ -473,6 +472,12 @@ def volume_to_dataset(volume):
                        volume.name.to_bytes())
 
 
+def get_storagepools(reactor, pools):
+    storage_pools = []
+    for pool in pools:
+        storage_pools.append(StoragePool(reactor=reactor, pool_config=pool))
+    return storage_pools
+
 @implementer(IStoragePool)
 @with_repr(["_name"])
 @with_cmp(["_name", "_mount_root"])
@@ -488,16 +493,15 @@ class StoragePool(Service):
     """
     logger = Logger()
 
-    def __init__(self, reactor, name, mount_root):
+    def __init__(self, reactor, pool_config):
         """
         :param reactor: A ``IReactorProcess`` provider.
-        :param bytes name: The pool's name.
-        :param FilePath mount_root: Directory where filesystems should be
-            mounted.
+        :param bytes pool_config: The pool's config.
         """
         self._reactor = reactor
-        self._name = name
-        self._mount_root = mount_root
+        self._name = pool_config.name
+        self._mount_root = pool_config.mountpoint
+        self._type = pool_config.type
 
     def startService(self):
         """
@@ -571,6 +575,9 @@ class StoragePool(Service):
         d.addCallback(lambda _: zfs_command(
             self._reactor, [b"destroy", filesystem.name]))
         return d
+
+    def contains(self, volume):
+        return True
 
     def set_maximum_size(self, volume):
         filesystem = self.get(volume)
@@ -669,6 +676,9 @@ class StoragePool(Service):
     def enumerate(self):
         listing = _list_filesystems(self._reactor, self._name)
         return listing.addCallback(_listed, self._name)
+
+    def get_pooltype(self):
+        return self._type
 
 
 @attributes(["dataset", "mountpoint", "refquota"], apply_immutable=True)

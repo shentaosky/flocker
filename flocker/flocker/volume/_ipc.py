@@ -118,6 +118,7 @@ class RemoteVolumeManager(object):
         data = self._destination.get_output(
             [b"flocker-volume",
              b"--config", self._config_path.path,
+             b"--pool", volume.get_type(),
              b"snapshots",
              volume.node_id.encode("ascii"),
              volume.name.to_bytes()]
@@ -131,6 +132,7 @@ class RemoteVolumeManager(object):
     def receive(self, volume):
         return self._destination.run([b"flocker-volume",
                                       b"--config", self._config_path.path,
+                                      b"--pool", volume.get_pool().get_pooltype(),
                                       b"receive",
                                       volume.node_id.encode(b"ascii"),
                                       volume.name.to_bytes()])
@@ -139,6 +141,7 @@ class RemoteVolumeManager(object):
         return self._destination.get_output(
             [b"flocker-volume",
              b"--config", self._config_path.path,
+             b"--pool", volume.get_pool().get_pooltype(),
              b"acquire",
              volume.node_id.encode(b"ascii"),
              volume.name.to_bytes()]).decode("ascii")
@@ -147,6 +150,7 @@ class RemoteVolumeManager(object):
         return self._destination.get_output(
             [b"flocker-volume",
              b"--config", self._config_path.path,
+             b"--pool", parent.get_pool().get_pooltype(),
              b"clone_to",
              parent.node_id.encode(b"ascii"),
              parent.name.to_bytes(),
