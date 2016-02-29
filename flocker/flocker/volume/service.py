@@ -29,6 +29,7 @@ from .filesystems.zfs import StoragePool
 from ._model import VolumeSize
 from ..common.script import ICommandLineScript
 from flocker.control._model import StorageType
+from flocker.volume.filesystems import zfs
 from ..node.script import validate_configuration
 
 DEFAULT_CONFIG_PATH = FilePath(b"/etc/flocker/volume.json")
@@ -420,7 +421,7 @@ class Volume(object):
         """
         new_volume = Volume(node_id=new_owner_id, name=self.name,
                             service=self.service, size=self.size, storagetype=self.storagetype)
-        d = self.service.get_pool(self).change_owner(self, new_volume)
+        d = self.get_pool().change_owner(self, new_volume)
 
         def filesystem_changed(_):
             return new_volume
@@ -432,14 +433,14 @@ class Volume(object):
 
         :return: The ``IFilesystem`` provider for the volume.
         """
-        return self.service.get_pool(self).get(self)
+        return self.get_pool(self).get(self)
 
     def get_pool(self):
         """
         Return volume's storage pool
         :return: "The ``StroagePool`` for this volume"
         """
-        if self.pool == None:
+        if self.pool is None:
             self.pool = self.service.get_pool(self)
         return self.pool
 
@@ -473,8 +474,8 @@ class VolumeScript(object):
         # read agent.yml from config and validate pool name
         cls.pool_name=options["pool"]
         configs = validate_configuration(yaml.safe_load(AGENT_CONFIG.getContent()))
-        pools = list(pool.name for pool in configs[b"dataset"][b"pools"]
-                               if pool.name == cls.pool_name)
+        pools = list(pool.storagetype for pool in configs[b"dataset"][b"pools"]
+                               if pool.storagetype == cls.storagetype)
 
         if len(pools) is not 1:
             stderr.write(
@@ -482,7 +483,8 @@ class VolumeScript(object):
             )
             raise SystemExit(1)
 
-        pool = StoragePool(reactor, cls.pool_name)
+        pool_configs = zfs.get_storagepools(reactor, configs[b"dataset"][b"pools"])
+        pool = StoragePool(reactor, pool_configs)
 
         service = cls._service_factory(
             config_path=options["config"], pools=[pool], reactor=reactor)
