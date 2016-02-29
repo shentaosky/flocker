@@ -16,6 +16,7 @@ from hashlib import md5
 from datetime import datetime, timedelta
 
 from characteristic import attributes
+from twisted.python.constants import ValueConstant
 from twisted.python.filepath import FilePath
 
 from pyrsistent import (
@@ -316,6 +317,19 @@ class Application(PClass):
     running = field(mandatory=True, initial=True, type=bool)
     command_line = pvector_field(unicode, optional=True, initial=None)
 
+class StorageType():
+    """
+    Storage Type in flocker.
+    """
+    # Gold
+    GOLD = ValueConstant(u"gold")
+    # Seliver
+    SILVER = ValueConstant(u"silver")
+    # BRONZE
+    BRONZE = ValueConstant(u"bronze")
+    # DEFAULT
+    DEFAULT = BRONZE
+
 
 class Dataset(PClass):
     """
@@ -335,14 +349,14 @@ class Dataset(PClass):
     :ivar int maximum_size: The maximum size in bytes of this dataset, or
         ``None`` if there is no specified limit.
 
-    :ivar string type: storage type for this dataset
+    :ivar string storagetype: storage type for this dataset
     """
     dataset_id = field(mandatory=True, type=unicode, factory=unicode)
     deleted = field(mandatory=True, initial=False, type=bool)
     maximum_size = field(mandatory=True, initial=None)
     metadata = field(mandatory=True, type=PMap, factory=pmap, initial=pmap(),
                      serializer=lambda f, d: dict(d))
-    type = field(mandatory=True, type=bytes, initial=b"hhd")
+    storagetype = field(mandatory=False, type=bytes, initial=StorageType.DEFAULT)
 
 
 class Manifestation(PClass):

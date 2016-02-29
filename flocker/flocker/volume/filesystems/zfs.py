@@ -27,6 +27,8 @@ from twisted.internet.error import ConnectionDone, ProcessTerminated
 from twisted.application.service import Service
 
 from .errors import MaximumSizeTooSmall, RenameDatasetFail
+from flocker.control._model import StorageType
+from flocker.volume.service import FlockerPoolConfig
 from .interfaces import (
     IFilesystemSnapshots, IStoragePool, IFilesystem,
     FilesystemAlreadyExists)
@@ -475,7 +477,8 @@ def volume_to_dataset(volume):
 def get_storagepools(reactor, pools):
     storage_pools = []
     for pool in pools:
-        storage_pools.append(StoragePool(reactor=reactor, pool_config=pool))
+        pool_config = FlockerPoolConfig(mountpoint=pool[b"mountpoint"], storagetype=pool[b"storagetype"])
+        storage_pools.append(StoragePool(reactor=reactor, pool_config=pool_config))
     return storage_pools
 
 @implementer(IStoragePool)
@@ -501,7 +504,7 @@ class StoragePool(Service):
         self._reactor = reactor
         self._name = pool_config.name
         self._mount_root = pool_config.mountpoint
-        self._type = pool_config.type
+        self._storagetype = pool_config.storagetype
 
     def startService(self):
         """
@@ -575,9 +578,6 @@ class StoragePool(Service):
         d.addCallback(lambda _: zfs_command(
             self._reactor, [b"destroy", filesystem.name]))
         return d
-
-    def contains(self, volume):
-        return True
 
     def set_maximum_size(self, volume):
         filesystem = self.get(volume)
@@ -677,8 +677,8 @@ class StoragePool(Service):
         listing = _list_filesystems(self._reactor, self._name)
         return listing.addCallback(_listed, self._name)
 
-    def get_pooltype(self):
-        return self._type
+    def get_storagetype(self):
+        return self._storagetype
 
 
 @attributes(["dataset", "mountpoint", "refquota"], apply_immutable=True)

@@ -28,6 +28,7 @@ from twisted.internet.defer import fail, succeed
 from .filesystems.zfs import StoragePool
 from ._model import VolumeSize
 from ..common.script import ICommandLineScript
+from flocker.control._model import StorageType
 from ..node.script import validate_configuration
 
 DEFAULT_CONFIG_PATH = FilePath(b"/etc/flocker/volume.json")
@@ -43,21 +44,14 @@ class FlockerPoolConfig(object):
     """
     Config of zfs storage pool
     """
-    def __init__(self, name=b"flocker", mountpoint=b"/flocker", type=b"hhd"):
-        self.name = name
-        self.mountpoint = mountpoint
-        self.type = type
+    def __init__(self, mountpoint, storagetype):
 
-class StorageType():
-    """
-    Storage Type in flocker.
-    """
-    # Gold
-    GOLD = b"gold"
-    # Seliver
-    SILVER = b"silver"
-    # BRONZE
-    BRONZE = b"bronze"
+        if mountpoint is None or storagetype is None:
+            print >> sys.stderr, 'mountpoint, storagetype might be empty'
+            sys.exit(1)
+
+        self.mountpoint = mountpoint
+        self.storagetype = storagetype
 
 
 class CreateConfigurationError(Exception):
@@ -142,7 +136,7 @@ class VolumeService(Service):
         if len(self.pools) == 1:
             return self.pools[0]
         for pool in self.pools:
-            if pool.type == volume.type:
+            if pool.storagetype == volume.storagetype:
                 return pool
 
     def startService(self):
@@ -391,10 +385,10 @@ class VolumeService(Service):
         return changing_owner
 
 
-@attributes(["node_id", "name", "service", "size", "pool", "type"],
+@attributes(["node_id", "name", "service", "size", "pool", "storagetype"],
             defaults=dict(size=VolumeSize(maximum_size=None),
                           pool=None,
-                          type=b"hdd"))
+                          storagetype=StorageType.DEFAULT))
 class Volume(object):
     """
     A data volume's identifier.
@@ -404,6 +398,7 @@ class Volume(object):
     :ivar VolumeName name: The name of the volume.
     :ivar VolumeSize size: The storage capacity of the volume.
     :ivar VolumeService service: The service that stores this volume.
+    :ivar StorageType storagetype: The storagetype of this volume.
     """
     def locally_owned(self):
         """
@@ -424,7 +419,7 @@ class Volume(object):
             instance once the ownership has been changed.
         """
         new_volume = Volume(node_id=new_owner_id, name=self.name,
-                            service=self.service, size=self.size, type=self.type)
+                            service=self.service, size=self.size, storagetype=self.storagetype)
         d = self.service.get_pool(self).change_owner(self, new_volume)
 
         def filesystem_changed(_):
@@ -448,12 +443,12 @@ class Volume(object):
             self.pool = self.service.get_pool(self)
         return self.pool
 
-    def get_type(self):
+    def get_storagetype(self):
         """
         Return volume's storage type
         :return A String representing the storage type
         """
-        return type
+        return self.storagetype
 
 
 @implementer(ICommandLineScript)

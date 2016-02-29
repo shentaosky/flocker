@@ -215,9 +215,13 @@ def validate_configuration(configuration):
                                 "mountpoint": {
                                     "type": "string",
                                 },
-                                "type": {
+                                "storagetype": {
                                     "type": "string",
                                 },
+                                "required": [
+                                    "mountpoint",
+                                    "storagetype",
+                                ],
                             }
                         },
                         "minItems": 1,
@@ -384,7 +388,7 @@ def _zfs_storagepool(
     """
     Create a ``VolumeService`` with a ``zfs.StoragePool``.
 
-    :param pools: The name of the ZFS storage pool to use.
+    :param pools_config: The configs of the ZFS storage pool to use.
     :param bytes volume_config_path: The path to the volume service's
         configuration file.
 
@@ -396,11 +400,7 @@ def _zfs_storagepool(
     else:
         config_path = FilePath(volume_config_path)
 
-    pool_configs = []
-    for pool in pools_config.pop[b"pools"]:
-        pool_configs.append(FlockerPoolConfig(name=pool[b"name"], mountpoint=pool[b"mountpoint"],type=pool[b"type"]))
-
-    zfs_pools = zfs.get_storagepools(reactor, pool_configs)
+    zfs_pools = zfs.get_storagepools(reactor, pools_config[b"pools"])
 
     api = VolumeService(
         config_path=config_path,
