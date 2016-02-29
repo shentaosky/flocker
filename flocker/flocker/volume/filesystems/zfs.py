@@ -27,7 +27,7 @@ from twisted.internet.error import ConnectionDone, ProcessTerminated
 from twisted.application.service import Service
 
 from .errors import MaximumSizeTooSmall, RenameDatasetFail
-from flocker.control._model import StorageType
+from flocker.control._model import StorageType, METADATA_STORAGETYPE
 from flocker.volume.service import FlockerPoolConfig
 from .interfaces import (
     IFilesystemSnapshots, IStoragePool, IFilesystem,
@@ -173,7 +173,7 @@ class Filesystem(object):
     implementation over time.
     """
     def __init__(self, pool, dataset, mountpoint=None, size=None,
-                 reactor=None):
+                 reactor=None, metadata={METADATA_STORAGETYPE:StorageType.DEFAULT.value}):
         """
         :param pool: The filesystem's pool name, e.g. ``b"hpool"``.
 
@@ -189,6 +189,7 @@ class Filesystem(object):
         self.dataset = dataset
         self._mountpoint = mountpoint
         self.size = size
+        self.metadata = metadata
         if reactor is None:
             from twisted.internet import reactor
         self._reactor = reactor
@@ -208,6 +209,11 @@ class Filesystem(object):
             return False
         return True
 
+    def get_storagetype(self):
+        if self.metadata[METADATA_STORAGETYPE] is None:
+            return StorageType.DEFAULT.value
+        return self.metadata[METADATA_STORAGETYPE]
+
     def snapshots(self):
         def list_snapshots():
             zfs_snapshots = ZFSSnapshots(self._reactor, self)
@@ -222,7 +228,7 @@ class Filesystem(object):
         else:
             # rename dataset that are not locally owned or remotely owned
             filesystems = _list_filesystems(self._reactor, self.pool)
-            filesystems.addCallback(_listed, self.pool)
+            filesystems.addCallback(_listed, self.pool, self.get_storagetype)
 
             def find_dataset(fs):
                 results = []
@@ -474,12 +480,66 @@ def volume_to_dataset(volume):
                        volume.name.to_bytes())
 
 
-def get_storagepools(reactor, pools):
-    storage_pools = []
-    for pool in pools:
-        pool_config = FlockerPoolConfig(mountpoint=pool[b"mountpoint"], storagetype=pool[b"storagetype"])
-        storage_pools.append(StoragePool(reactor=reactor, pool_config=pool_config))
-    return storage_pools
+class StoragePoolsService(Service):
+    """
+    A ZFS Storage service to manage multiple zfs storage pools
+    """
+    logger = Logger
+
+    def __init__(self, reactor, pools_config):
+        """
+        :param reactor: A "IReactorProcess"
+        :param config: config read from /etc/flocker/agent.yml
+        """
+        self._reactor = reactor
+        self._pools = {StorageType.lookupByValue(config[METADATA_STORAGETYPE]): StoragePool(
+                               reactor,
+                               FlockerPoolConfig(mountpoint=config[b"mountpoint"],
+                                                 storagetype=StorageType.lookupByValue(config[METADATA_STORAGETYPE]),
+                                                 name=config[b"name"]
+                                                 ))
+                       for config in pools_config}
+
+    def startService(self):
+        Service.startService(self)
+        for pool in self._pools:
+            pool.startService
+
+    def get_pool(self, volume):
+        return self._pools.get(StorageType.lookupByValue(volume.metadata[METADATA_STORAGETYPE]))
+
+    def create(self, volume):
+        return self.get_pool(volume).create(volume)
+
+    def destory(self, volume):
+        return self.get_pool(volume).destory(volume)
+
+    def set_maximum_size(self, volume):
+        return self.get_pool(volume).set_maximum_size(volume)
+
+    def clone_to(self, parent, volume):
+        return self.get_pool(volume).clone_to(parent, volume)
+
+    def change_own(self, volume, new_volume):
+        return self.get_pool(volume).change_own(volume, new_volume)
+
+    def get(self, volume):
+        return self.get_pool(volume).get(volume)
+
+    def enumerate(self):
+        res = []
+
+        def concat_fssets(filesystems, fssets):
+            for fs in filesystems:
+                fssets.append(fs)
+            return
+
+        for pool in self._pools.values():
+            pool_fs = pool.enumerate()
+            pool_fs.addCallback(concat_fssets, res)
+
+        return succeed(res)
+
 
 @implementer(IStoragePool)
 @with_repr(["_name"])
@@ -499,7 +559,7 @@ class StoragePool(Service):
     def __init__(self, reactor, pool_config):
         """
         :param reactor: A ``IReactorProcess`` provider.
-        :param bytes pool_config: The pool's config.
+        :param FlockerPoolConfig pool_config: The pool's config.
         """
         self._reactor = reactor
         self._name = pool_config.name
@@ -675,7 +735,7 @@ class StoragePool(Service):
 
     def enumerate(self):
         listing = _list_filesystems(self._reactor, self._name)
-        return listing.addCallback(_listed, self._name)
+        return listing.addCallback(_listed, self._name, self.get_storagetype())
 
     def get_storagetype(self):
         return self._storagetype
@@ -693,12 +753,12 @@ class _DatasetInfo(object):
     """
 
 
-def _listed(filesystems, pool):
+def _listed(filesystems, pool, storagetype):
     result = set()
     for entry in filesystems:
         filesystem = Filesystem(
             pool, entry.dataset, FilePath(entry.mountpoint),
-            VolumeSize(maximum_size=entry.refquota))
+            VolumeSize(maximum_size=entry.refquota), metadata={METADATA_STORAGETYPE: storagetype})
         result.add(filesystem)
     return result
 

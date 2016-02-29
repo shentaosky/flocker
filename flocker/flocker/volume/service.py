@@ -43,14 +43,19 @@ WAIT_FOR_VOLUME_INTERVAL = 0.1
 
 class FlockerPoolConfig(object):
     """
-    Config of zfs storage pool
+    Config of zfs storage pool.
+
+    :ivar bytes name: The name of flocker pool
+    :ivar bytes mountpoint: The mountpoint of flocker pool
+    :ivar StorageType storagetype: The storagetype of flocker pool
     """
-    def __init__(self, mountpoint, storagetype):
+    def __init__(self, mountpoint, storagetype, name=FLOCKER_POOL):
 
         if mountpoint is None or storagetype is None:
             print >> sys.stderr, 'mountpoint, storagetype might be empty'
             sys.exit(1)
 
+        self.name = name
         self.mountpoint = mountpoint
         self.storagetype = storagetype
 
@@ -120,25 +125,17 @@ class VolumeService(Service):
         volume manager. Only available once the service has started.
     """
 
-    def __init__(self, config_path, pools, reactor):
+    def __init__(self, config_path, pool, reactor):
         """
         :param FilePath config_path: Path to the volume manager config file.
-        :param pools: An List of object that is both a
+        :param pool: An object that is both a
             ``flocker.volume.filesystems.interface.IStoragePool`` provider
             and a ``twisted.application.service.IService`` provider.
         :param reactor: A ``twisted.internet.interface.IReactorTime`` provider.
         """
         self._config_path = config_path
-        self.pools = pools
+        self.pool = pool
         self._reactor = reactor
-
-    def get_pool(self, volume):
-        # return default pools
-        if len(self.pools) == 1:
-            return self.pools[0]
-        for pool in self.pools:
-            if pool.storagetype == volume.storagetype:
-                return pool
 
     def startService(self):
         Service.startService(self)
@@ -168,7 +165,7 @@ class VolumeService(Service):
         """
         # XXX Consider changing the type of volume to a volume model object.
         # FLOC-1062
-        d = self.get_pool(volume).create(volume)
+        d = self.pool.create(volume)
 
         def created(filesystem):
             self._make_public(filesystem)
@@ -185,7 +182,7 @@ class VolumeService(Service):
 
         :return: A ``Deferred`` that fires with a :class:`Volume`.
         """
-        d = self.get_pool(volume).set_maximum_size(volume)
+        d = self.pool.set_maximum_size(volume)
 
         def resized(filesystem):
             return volume
@@ -203,7 +200,7 @@ class VolumeService(Service):
         :return: A ``Deferred`` that fires with a :class:`Volume`.
         """
         volume = self.get(name)
-        d = self.get_pool(volume).clone_to(parent, volume)
+        d = self.pool.clone_to(parent, volume)
 
         def created(filesystem):
             self._make_public(filesystem)
@@ -277,7 +274,8 @@ class VolumeService(Service):
                     node_id=node_id.decode("ascii"),
                     name=name,
                     service=self,
-                    size=filesystem.size)
+                    size=filesystem.size,
+                    metadata=filesystem.metadata)
         enumerating.addCallback(enumerated)
         return enumerating
 
@@ -386,10 +384,9 @@ class VolumeService(Service):
         return changing_owner
 
 
-@attributes(["node_id", "name", "service", "size", "pool", "storagetype"],
+@attributes(["node_id", "name", "service", "size", "pool", "metadata"],
             defaults=dict(size=VolumeSize(maximum_size=None),
-                          pool=None,
-                          storagetype=StorageType.DEFAULT))
+                          pool=None))
 class Volume(object):
     """
     A data volume's identifier.
@@ -399,7 +396,7 @@ class Volume(object):
     :ivar VolumeName name: The name of the volume.
     :ivar VolumeSize size: The storage capacity of the volume.
     :ivar VolumeService service: The service that stores this volume.
-    :ivar StorageType storagetype: The storagetype of this volume.
+    :ivar dict metadata: The metadata of this volume.
     """
     def locally_owned(self):
         """
@@ -420,8 +417,8 @@ class Volume(object):
             instance once the ownership has been changed.
         """
         new_volume = Volume(node_id=new_owner_id, name=self.name,
-                            service=self.service, size=self.size, storagetype=self.storagetype)
-        d = self.get_pool().change_owner(self, new_volume)
+                            service=self.service, size=self.size, metadata=self.metadata)
+        d = self.service.pool.change_owner(self, new_volume)
 
         def filesystem_changed(_):
             return new_volume
@@ -433,23 +430,13 @@ class Volume(object):
 
         :return: The ``IFilesystem`` provider for the volume.
         """
-        return self.get_pool(self).get(self)
-
-    def get_pool(self):
-        """
-        Return volume's storage pool
-        :return: "The ``StroagePool`` for this volume"
-        """
-        if self.pool is None:
-            self.pool = self.service.get_pool(self)
-        return self.pool
+        return self.service.pool.get(self)
 
     def get_storagetype(self):
-        """
-        Return volume's storage type
-        :return A String representing the storage type
-        """
-        return self.storagetype
+        if self.metadata[b"storagetype"] is None:
+            return StorageType.DEFAULT
+        return StorageType.lookupByValue(self.metadata[b"storagetype"])
+
 
 
 @implementer(ICommandLineScript)
@@ -474,20 +461,19 @@ class VolumeScript(object):
         # read agent.yml from config and validate pool name
         cls.pool_name=options["pool"]
         configs = validate_configuration(yaml.safe_load(AGENT_CONFIG.getContent()))
-        pools = list(pool.storagetype for pool in configs[b"dataset"][b"pools"]
+        match_config = list(pool.storagetype for pool in configs[b"dataset"][b"pools"]
                                if pool.storagetype == cls.storagetype)
 
-        if len(pools) is not 1:
+        if len(match_config) is not 1:
             stderr.write(
                 b"pool %s is not properly configied in %s" % (cls.pool_name, DEFAULT_AGENT_CONFIGFILE)
             )
             raise SystemExit(1)
 
-        pool_configs = zfs.get_storagepools(reactor, configs[b"dataset"][b"pools"])
-        pool = StoragePool(reactor, pool_configs)
+        pool = zfs.StoragePoolsService(reactor, match_config)
 
         service = cls._service_factory(
-            config_path=options["config"], pools=[pool], reactor=reactor)
+            config_path=options["config"], pool=pool, reactor=reactor)
         try:
             service.startService()
         except CreateConfigurationError as e:

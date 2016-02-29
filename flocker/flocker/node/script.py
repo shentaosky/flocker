@@ -212,6 +212,9 @@ def validate_configuration(configuration):
                         "type": "array",
                         "items": {
                             "type": {
+                                "name": {
+                                    "type": "string",
+                                },
                                 "mountpoint": {
                                     "type": "string",
                                 },
@@ -219,6 +222,7 @@ def validate_configuration(configuration):
                                     "type": "string",
                                 },
                                 "required": [
+                                    "name",
                                     "mountpoint",
                                     "storagetype",
                                 ],
@@ -400,11 +404,9 @@ def _zfs_storagepool(
     else:
         config_path = FilePath(volume_config_path)
 
-    zfs_pools = zfs.get_storagepools(reactor, pools_config[b"pools"])
-
     api = VolumeService(
         config_path=config_path,
-        pools=zfs_pools,
+        pool=zfs.StoragePoolsService(reactor, pools_config[b"pools"]),
         reactor=reactor,
     )
     api.startService()

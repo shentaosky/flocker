@@ -68,14 +68,14 @@ class CreateDataset(PClass):
             _logger, _eliot_system(u"createdataset"),
             dataset_id=self.dataset.dataset_id,
             maximum_size=self.dataset.maximum_size,
-            storagetype=self.dataset.storagetype
+            metadata=self.dataset.metadata
         )
 
     def run(self, deployer):
         volume = deployer.volume_service.get(
             name=_to_volume_name(self.dataset.dataset_id),
             size=VolumeSize(maximum_size=self.dataset.maximum_size),
-            storagetype=self.dataset.storagetype
+            metadata=self.dataset.metadata
         )
         return deployer.volume_service.create(volume)
 
