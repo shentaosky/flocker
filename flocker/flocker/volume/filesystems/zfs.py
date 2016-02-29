@@ -161,6 +161,10 @@ def _latest_common_snapshot(some, others):
             return snapshot
     return None
 
+def get_storagetype_from_metadata(metadata):
+    if metadata[METADATA_STORAGETYPE] is None:
+        return StorageType.DEFAULT
+    return StorageType.lookupByValue(metadata[METADATA_STORAGETYPE])
 
 @implementer(IFilesystem)
 @with_cmp(["pool", "dataset"])
@@ -506,7 +510,7 @@ class StoragePoolsService(Service):
             pool.startService
 
     def get_pool(self, volume):
-        return self._pools.get(StorageType.lookupByValue(volume.metadata[METADATA_STORAGETYPE]))
+        return self._pools.get(get_storagetype_from_metadata(volume.metadata))
 
     def create(self, volume):
         return self.get_pool(volume).create(volume)
