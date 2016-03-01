@@ -23,7 +23,7 @@ usage()
 cat << EOF
 usage: 
   $(basename $0) [ROLE] 
-  ROLE: master| regionserver 
+  ROLE: flocker-control| flocker-dataset-agent| flocker-container-agent| flocker-docker-plugin
   Environment : 
     \$SKYDNS_PATH : skydns path on etcd server 
     \$DEBUG : wait for debug when docker exiting 
