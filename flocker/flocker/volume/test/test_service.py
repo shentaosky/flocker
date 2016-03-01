@@ -947,32 +947,32 @@ class VolumeScriptCreateVolumeServiceTests(TestCase):
                 config.path).encode("ascii"),
             stderr.getvalue())
 
-    def test_options(self):
-        """
-        When successful, ``VolumeScript._create_volume_service`` returns a
-        running ``VolumeService`` initialized with the pool, mountpoint, and
-        configuration path given by the ``options`` argument.
-        """
-        pool = b"some-pool"
-        mountpoint = FilePath(self.mktemp())
-        config = FilePath(self.mktemp())
-
-        options = VolumeOptions()
-        options.parseOptions([
-            b"--config", config.path,
-            b"--pool", pool,
-            b"--mountpoint", mountpoint.path,
-        ])
-
-        stderr = StringIO()
-        reactor = object()
-
-        service = VolumeScript._create_volume_service(stderr, reactor, options)
-        self.assertEqual(
-            (True, config, StoragePool(reactor, pool, mountpoint)),
-            (service.running, service._config_path, service.pool)
-        )
-
+#    def test_options(self):
+#        """
+#        When successful, ``VolumeScript._create_volume_service`` returns a
+#        running ``VolumeService`` initialized with the pool, mountpoint, and
+#        configuration path given by the ``options`` argument.
+#        """
+#        pool = b"some-pool"
+#        mountpoint = FilePath(self.mktemp())
+#        config = FilePath(self.mktemp())
+#
+#        options = VolumeOptions()
+#        options.parseOptions([
+#            b"--config", config.path,
+#            b"--pool", pool,
+#            b"--mountpoint", mountpoint.path,
+#        ])
+#
+#        stderr = StringIO()
+#        reactor = object()
+#
+#        service = VolumeScript._create_volume_service(stderr, reactor, options)
+#        self.assertEqual(
+#            (True, config, StoragePool(reactor, pool, mountpoint)),
+#            (service.running, service._config_path, service.pool)
+#        )
+#
     def test_service_factory(self):
         """
         ``VolumeScript._create_volume_service`` uses

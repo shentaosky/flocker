@@ -52,6 +52,10 @@ class IFilesystem(Interface):
     was correct when this ``IFilesystem`` provider was created.
     """)
 
+    storagetype = Attribute("""
+    storagetype about this filesystem
+    """)
+
     def get_path():
         """Retrieve the filesystem's local path.
 

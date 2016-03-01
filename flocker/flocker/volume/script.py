@@ -9,9 +9,10 @@ from twisted.python.filepath import FilePath
 from twisted.internet.defer import succeed, maybeDeferred
 
 from zope.interface import implementer
+from flocker.common._node_config import DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT
+from flocker.common._node_config import FLOCKER_POOL
 
 from .service import (
-    DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT, FLOCKER_POOL,
     Volume, VolumeScript, ICommandLineVolumeScript, VolumeName,
     )
 from ..common.script import (

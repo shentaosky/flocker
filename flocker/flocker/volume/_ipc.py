@@ -21,7 +21,6 @@ from twisted.internet.defer import succeed
 from twisted.python.filepath import FilePath
 
 from ..common._ipc import ProcessNode
-from .service import DEFAULT_CONFIG_PATH
 from .filesystems.zfs import Snapshot
 
 
@@ -29,7 +28,7 @@ from .filesystems.zfs import Snapshot
 # across nodes.
 # XXX duplicate of same information in flocker.cli:
 # https://clusterhq.atlassian.net/browse/FLOC-390
-SSH_PRIVATE_KEY_PATH = FilePath(b"/etc/flocker/id_rsa_flocker")
+from flocker.common._node_config import SSH_PRIVATE_KEY_PATH, DEFAULT_CONFIG_PATH
 
 
 def standard_node(hostname):

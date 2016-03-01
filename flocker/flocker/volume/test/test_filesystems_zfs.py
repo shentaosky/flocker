@@ -16,6 +16,7 @@ from eliot import Logger
 from eliot.testing import (
     LoggedMessage, validateLogging, assertHasMessage,
     )
+from flocker.control._model import StorageType, METADATA_STORAGETYPE
 
 from ...testtools import (
     FakeProcessReactor, assert_equal_comparison, assert_not_equal_comparison,
@@ -103,6 +104,33 @@ class FilesystemTests(TestCase):
             Filesystem(
                 pool=pool, dataset=b"bdataset", mountpoint=mountpoint,
                 size=size, reactor=reactor)
+        )
+
+    def test_default_storagetype(self):
+        pool = b"zpool"
+        mountpoint = FilePath(b"/foo")
+        size = 123
+        reactor = object()
+        assert_not_equal_comparison(
+            self,
+            Filesystem(
+                pool=pool, dataset=b"adataset", mountpoint=mountpoint,
+                size=size, reactor=reactor).get_storagetype(),
+            StorageType.DEFAULT.value
+        )
+
+    def test_metadata_storagetype(self):
+        pool = b"zpool"
+        mountpoint = FilePath(b"/foo")
+        size = 123
+        reactor = object()
+        storagetype = StorageType.DEFAULT
+        assert_not_equal_comparison(
+            self,
+            Filesystem(
+                pool=pool, dataset=b"adataset", mountpoint=mountpoint,
+                size=size, reactor=reactor, storagetype=storagetype).get_storagetype(),
+            StorageType.GOLD.value
         )
 
 

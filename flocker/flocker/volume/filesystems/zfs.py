@@ -7,6 +7,8 @@ ZFS APIs.
 from __future__ import absolute_import
 
 import os
+import sys
+import yaml
 from contextlib import contextmanager
 from subprocess import (
     CalledProcessError, STDOUT, PIPE, Popen, check_call, check_output
@@ -27,8 +29,8 @@ from twisted.internet.error import ConnectionDone, ProcessTerminated
 from twisted.application.service import Service
 
 from .errors import MaximumSizeTooSmall, RenameDatasetFail
+from flocker.common._node_config import AGENT_CONFIG
 from flocker.control._model import StorageType, METADATA_STORAGETYPE
-from flocker.volume.service import FlockerPoolConfig
 from .interfaces import (
     IFilesystemSnapshots, IStoragePool, IFilesystem,
     FilesystemAlreadyExists)
@@ -101,6 +103,12 @@ ZFS_ERROR = MessageType(
     "filesystem:zfs:error", [_ZFS_COMMAND, _OUTPUT, _STATUS],
     u"The zfs command signaled an error.")
 
+_MSG = Field.forTypes(
+    "message", [bytes], u"message")
+
+ZFS_CONFIG_LOG = MessageType(
+    "filesystem:zfs:config", [_MSG],
+    u"message from zfs module.")
 
 def _sync_command_error_squashed(arguments, logger):
     """
@@ -161,10 +169,6 @@ def _latest_common_snapshot(some, others):
             return snapshot
     return None
 
-def get_storagetype_from_metadata(metadata):
-    if metadata[METADATA_STORAGETYPE] is None:
-        return StorageType.DEFAULT
-    return StorageType.lookupByValue(metadata[METADATA_STORAGETYPE])
 
 @implementer(IFilesystem)
 @with_cmp(["pool", "dataset"])
@@ -177,7 +181,7 @@ class Filesystem(object):
     implementation over time.
     """
     def __init__(self, pool, dataset, mountpoint=None, size=None,
-                 reactor=None, metadata={METADATA_STORAGETYPE:StorageType.DEFAULT.value}):
+                 reactor=None, storagetype=StorageType.DEFAULT):
         """
         :param pool: The filesystem's pool name, e.g. ``b"hpool"``.
 
@@ -193,7 +197,7 @@ class Filesystem(object):
         self.dataset = dataset
         self._mountpoint = mountpoint
         self.size = size
-        self.metadata = metadata
+        self.storagetype = storagetype
         if reactor is None:
             from twisted.internet import reactor
         self._reactor = reactor
@@ -214,9 +218,7 @@ class Filesystem(object):
         return True
 
     def get_storagetype(self):
-        if self.metadata[METADATA_STORAGETYPE] is None:
-            return StorageType.DEFAULT.value
-        return self.metadata[METADATA_STORAGETYPE]
+        return self.storagetype
 
     def snapshots(self):
         def list_snapshots():
@@ -488,29 +490,49 @@ class StoragePoolsService(Service):
     """
     A ZFS Storage service to manage multiple zfs storage pools
     """
-    logger = Logger
+    logger = Logger()
 
-    def __init__(self, reactor, pools_config):
+    def __init__(self, reactor, pool_type=None):
         """
         :param reactor: A "IReactorProcess"
-        :param config: config read from /etc/flocker/agent.yml
+        :param pool_type: pool type to work on, if None, work on all pools configed by /etc/flocker/agent.yml
         """
         self._reactor = reactor
-        self._pools = {StorageType.lookupByValue(config[METADATA_STORAGETYPE]): StoragePool(
-                               reactor,
-                               FlockerPoolConfig(mountpoint=config[b"mountpoint"],
-                                                 storagetype=StorageType.lookupByValue(config[METADATA_STORAGETYPE]),
-                                                 name=config[b"name"]
-                                                 ))
-                       for config in pools_config}
+        self._pools = {}
+        self._pool_type = pool_type
 
     def startService(self):
         Service.startService(self)
-        for pool in self._pools:
-            pool.startService
+        pools_config = yaml.safe_load(AGENT_CONFIG.getContent())
+        for config in pools_config[b"dataset"][b"pools"]:
+            storagetype = StorageType.lookupByValue(config.get(METADATA_STORAGETYPE, StorageType.DEFAULT.value))
+            pool = StoragePool(reactor=self._reactor,
+                               mountpoint=FilePath(config.get(b"mountpoint", "/flocker")),
+                               storagetype=storagetype,
+                               name=config.get(b"name", "flocker"))
+            if self._pool_type is not None and self._pool_type != storagetype:
+                continue
+            if self._pools.has_key(storagetype):
+                sys.stderr.write("multiple storage pools for type %s" % storagetype.value)
+                sys.exit(1)
+
+            self._pools[storagetype] = pool
+            pool.startService()
+
+        config_logs = "config pools %s " % self._pools
+        ZFS_CONFIG_LOG(message=config_logs).write(self.logger)
+        if len(self._pools.items()) == 0:
+            sys.stderr("at least one storage pool should be config")
+            sys.exit(1)
+        self._default_pool = self._pools.values().pop()
 
     def get_pool(self, volume):
-        return self._pools.get(get_storagetype_from_metadata(volume.metadata))
+        if self._pools.has_key(volume.get_storagetype()):
+            return self._pools.get(volume.get_storagetype())
+        warning=b"cannot get pool for type %s  volume %s, use default pool %s" % (volume.get_storagetype(), volume, self._default_pool)
+        message = ZFS_CONFIG_LOG(message=warning)
+        message.write(self.logger)
+        return self._default_pool
 
     def create(self, volume):
         return self.get_pool(volume).create(volume)
@@ -560,15 +582,17 @@ class StoragePool(Service):
     """
     logger = Logger()
 
-    def __init__(self, reactor, pool_config):
+    def __init__(self, reactor, name, mountpoint, storagetype):
         """
         :param reactor: A ``IReactorProcess`` provider.
-        :param FlockerPoolConfig pool_config: The pool's config.
+        :param name: The name of storage pool
+        :param mountpoint: The Mountpoint of storage pool
+        :param storagetype: The storagetype of storage pool
         """
         self._reactor = reactor
-        self._name = pool_config.name
-        self._mount_root = pool_config.mountpoint
-        self._storagetype = pool_config.storagetype
+        self._name = name
+        self._mount_root = mountpoint
+        self._storagetype = storagetype
 
     def startService(self):
         """
@@ -762,7 +786,7 @@ def _listed(filesystems, pool, storagetype):
     for entry in filesystems:
         filesystem = Filesystem(
             pool, entry.dataset, FilePath(entry.mountpoint),
-            VolumeSize(maximum_size=entry.refquota), metadata={METADATA_STORAGETYPE: storagetype})
+            VolumeSize(maximum_size=entry.refquota), storagetype=storagetype)
         result.add(filesystem)
     return result
 

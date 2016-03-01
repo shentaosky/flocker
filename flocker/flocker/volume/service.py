@@ -25,40 +25,13 @@ from twisted.internet.defer import fail, succeed
 # We might want to make these utilities shared, rather than in zfs
 # module... but in this case the usage is temporary and should go away as
 # part of https://clusterhq.atlassian.net/browse/FLOC-64
-from .filesystems.zfs import StoragePool
+from .filesystems.zfs import StoragePoolsService
 from ._model import VolumeSize
 from ..common.script import ICommandLineScript
 from flocker.control._model import StorageType
-from flocker.volume.filesystems import zfs
-from ..node.script import validate_configuration
 
-DEFAULT_CONFIG_PATH = FilePath(b"/etc/flocker/volume.json")
-FLOCKER_MOUNTPOINT = FilePath(b"/flocker")
-FLOCKER_POOL = b"flocker"
-
-DEFAULT_AGENT_CONFIGFILE = b"/etc/flocker/agent.yml"
-AGENT_CONFIG = FilePath(DEFAULT_AGENT_CONFIGFILE)
 
 WAIT_FOR_VOLUME_INTERVAL = 0.1
-
-class FlockerPoolConfig(object):
-    """
-    Config of zfs storage pool.
-
-    :ivar bytes name: The name of flocker pool
-    :ivar bytes mountpoint: The mountpoint of flocker pool
-    :ivar StorageType storagetype: The storagetype of flocker pool
-    """
-    def __init__(self, mountpoint, storagetype, name=FLOCKER_POOL):
-
-        if mountpoint is None or storagetype is None:
-            print >> sys.stderr, 'mountpoint, storagetype might be empty'
-            sys.exit(1)
-
-        self.name = name
-        self.mountpoint = mountpoint
-        self.storagetype = storagetype
-
 
 class CreateConfigurationError(Exception):
     """Create the configuration file failed."""
@@ -151,8 +124,7 @@ class VolumeService(Service):
             raise CreateConfigurationError(e.args[1])
         config = json.loads(self._config_path.getContent())
         self.node_id = config[u"uuid"]
-        for pool in self.pools:
-            pool.startService()
+        self.pool.startService()
 
     def create(self, volume):
         """
@@ -275,7 +247,7 @@ class VolumeService(Service):
                     name=name,
                     service=self,
                     size=filesystem.size,
-                    metadata=filesystem.metadata)
+                    storagetype=filesystem.storagetype)
         enumerating.addCallback(enumerated)
         return enumerating
 
@@ -384,9 +356,10 @@ class VolumeService(Service):
         return changing_owner
 
 
-@attributes(["node_id", "name", "service", "size", "pool", "metadata"],
+@attributes(["node_id", "name", "service", "size", "pool", "storagetype"],
             defaults=dict(size=VolumeSize(maximum_size=None),
-                          pool=None))
+                          pool=None,
+                          storagetype=StorageType.DEFAULT))
 class Volume(object):
     """
     A data volume's identifier.
@@ -396,7 +369,7 @@ class Volume(object):
     :ivar VolumeName name: The name of the volume.
     :ivar VolumeSize size: The storage capacity of the volume.
     :ivar VolumeService service: The service that stores this volume.
-    :ivar dict metadata: The metadata of this volume.
+    :ivar Storagetype storagetype: The storagetype of this volume.
     """
     def locally_owned(self):
         """
@@ -417,7 +390,7 @@ class Volume(object):
             instance once the ownership has been changed.
         """
         new_volume = Volume(node_id=new_owner_id, name=self.name,
-                            service=self.service, size=self.size, metadata=self.metadata)
+                            service=self.service, size=self.size, storagetype=self.storagetype)
         d = self.service.pool.change_owner(self, new_volume)
 
         def filesystem_changed(_):
@@ -433,10 +406,7 @@ class Volume(object):
         return self.service.pool.get(self)
 
     def get_storagetype(self):
-        if self.metadata[b"storagetype"] is None:
-            return StorageType.DEFAULT
-        return StorageType.lookupByValue(self.metadata[b"storagetype"])
-
+        return self.storagetype
 
 
 @implementer(ICommandLineScript)
@@ -458,19 +428,8 @@ class VolumeScript(object):
 
         :return: The started ``VolumeService``.
         """
-        # read agent.yml from config and validate pool name
-        cls.pool_name=options["pool"]
-        configs = validate_configuration(yaml.safe_load(AGENT_CONFIG.getContent()))
-        match_config = list(pool.storagetype for pool in configs[b"dataset"][b"pools"]
-                               if pool.storagetype == cls.storagetype)
-
-        if len(match_config) is not 1:
-            stderr.write(
-                b"pool %s is not properly configied in %s" % (cls.pool_name, DEFAULT_AGENT_CONFIGFILE)
-            )
-            raise SystemExit(1)
-
-        pool = zfs.StoragePoolsService(reactor, match_config)
+        cls.pool_type=options["pool"]
+        pool = StoragePoolsService(reactor, cls.pool_type)
 
         service = cls._service_factory(
             config_path=options["config"], pool=pool, reactor=reactor)

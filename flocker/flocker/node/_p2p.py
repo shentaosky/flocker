@@ -75,7 +75,7 @@ class CreateDataset(PClass):
         volume = deployer.volume_service.get(
             name=_to_volume_name(self.dataset.dataset_id),
             size=VolumeSize(maximum_size=self.dataset.maximum_size),
-            metadata=self.dataset.metadata
+            storagetype=self.dataset.get_storagetype()
         )
         return deployer.volume_service.create(volume)
 

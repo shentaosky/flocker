@@ -331,7 +331,7 @@ class StorageType(Values):
     DEFAULT = BRONZE
 
 
-METADATA_STORAGETYPE = b"storagetype"
+METADATA_STORAGETYPE = u"storagetype"
 
 class Dataset(PClass):
     """
@@ -358,9 +358,8 @@ class Dataset(PClass):
                      serializer=lambda f, d: dict(d))
 
     def get_storagetype(self):
-        if self.metadata[METADATA_STORAGETYPE] is None:
-            return StorageType.DEFAULT
-        return StorageType.lookupByValue(self.metadata[METADATA_STORAGETYPE])
+        type = self.metadata.get(METADATA_STORAGETYPE, StorageType.DEFAULT.value)
+        return StorageType.lookupByValue(type)
 
 class Manifestation(PClass):
     """

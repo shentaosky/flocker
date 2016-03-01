@@ -11,15 +11,10 @@ import sys
 from time import sleep
 
 import yaml
-
 from jsonschema import FormatChecker, Draft4Validator
-
 from pyrsistent import PClass, field, PMap, pmap, pvector
-
 from eliot import ActionType, fields
-
 from zope.interface import implementer
-
 from twisted.python.filepath import FilePath
 from twisted.python.usage import Options, UsageError
 from twisted.internet.ssl import Certificate
@@ -28,10 +23,9 @@ from twisted.internet.defer import succeed
 from twisted.python.constants import Names, NamedConstant
 from twisted.python.reflect import namedAny
 
+from flocker.common._node_config import DEFAULT_CONFIG_PATH
 from ..volume.filesystems import zfs
-from ..volume.service import (
-    VolumeService, DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT, FLOCKER_POOL, FlockerPoolConfig)
-
+from ..volume.service import VolumeService
 from ..common.script import (
     ICommandLineScript,
     flocker_standard_options, FlockerScriptRunner, main_for_service)
@@ -58,7 +52,6 @@ __all__ = [
     "flocker_container_agent_main",
     "flocker_diagnostics_main",
 ]
-
 
 def flocker_dataset_agent_main():
     """
@@ -388,11 +381,11 @@ def get_configuration(options):
 
 
 def _zfs_storagepool(
-        reactor, pools_config, volume_config_path=None):
+        reactor, pools, volume_config_path=None):
     """
     Create a ``VolumeService`` with a ``zfs.StoragePool``.
 
-    :param pools_config: The configs of the ZFS storage pool to use.
+    :param pools: The configs of the ZFS storage pool to use.
     :param bytes volume_config_path: The path to the volume service's
         configuration file.
 
@@ -406,7 +399,7 @@ def _zfs_storagepool(
 
     api = VolumeService(
         config_path=config_path,
-        pool=zfs.StoragePoolsService(reactor, pools_config[b"pools"]),
+        pool=zfs.StoragePoolsService(reactor),
         reactor=reactor,
     )
     api.startService()

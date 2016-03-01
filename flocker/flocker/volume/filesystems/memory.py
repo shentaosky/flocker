@@ -17,6 +17,7 @@ from twisted.internet.defer import succeed, fail
 from twisted.application.service import Service
 
 from .errors import MaximumSizeTooSmall
+from flocker.control._model import StorageType
 from .interfaces import (
     IFilesystemSnapshots, IStoragePool, IFilesystem,
     FilesystemAlreadyExists)
@@ -48,8 +49,9 @@ class CannedFilesystemSnapshots(object):
 @implementer(IFilesystem)
 @with_cmp(["path"])
 @with_repr(["path", "size"])
-@with_init(["path", "size"],
-           defaults=dict(size=VolumeSize(maximum_size=None)))
+@with_init(["path", "size", "storagetype"],
+           defaults=dict(size=VolumeSize(maximum_size=None),
+                         storagetype=StorageType.DEFAULT))
 class DirectoryFilesystem(object):
     """
     A directory pretending to be an independent filesystem.
