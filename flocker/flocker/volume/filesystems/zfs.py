@@ -486,6 +486,7 @@ def volume_to_dataset(volume):
                        volume.name.to_bytes())
 
 
+@implementer(IStoragePool)
 class StoragePoolsService(Service):
     """
     A ZFS Storage service to manage multiple zfs storage pools
@@ -537,8 +538,8 @@ class StoragePoolsService(Service):
     def create(self, volume):
         return self.get_pool(volume).create(volume)
 
-    def destory(self, volume):
-        return self.get_pool(volume).destory(volume)
+    def destroy(self, volume):
+        return self.get_pool(volume).destroy(volume)
 
     def set_maximum_size(self, volume):
         return self.get_pool(volume).set_maximum_size(volume)
@@ -546,8 +547,8 @@ class StoragePoolsService(Service):
     def clone_to(self, parent, volume):
         return self.get_pool(volume).clone_to(parent, volume)
 
-    def change_own(self, volume, new_volume):
-        return self.get_pool(volume).change_own(volume, new_volume)
+    def change_owner(self, volume, new_volume):
+        return self.get_pool(volume).change_owner(volume, new_volume)
 
     def get(self, volume):
         return self.get_pool(volume).get(volume)
