@@ -554,9 +554,22 @@ class StoragePoolsService(Service):
 
     def enumerate(self):
         deferred_list = []
+
         for pool in self._pools.values():
             deferred_list.append(pool.enumerate())
         dl = DeferredList(deferred_list, consumeErrors=False)
+
+        def listed_fs(pools):
+            res = set()
+            for (sucess, filesystems_from_pool) in pools:
+                if sucess:
+                    for fs in filesystems_from_pool:
+                        res.add(fs)
+                else:
+                    continue
+            return res
+
+        dl.addCallback(listed_fs)
         return dl
 
 @implementer(IStoragePool)
