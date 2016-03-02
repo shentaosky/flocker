@@ -428,7 +428,7 @@ class VolumeScript(object):
 
         :return: The started ``VolumeService``.
         """
-        cls.pool_type=options["pool"]
+        cls.pool_type = StorageType.lookupByValue(options.get("pool", StorageType.DEFAULT.value))
         pool = StoragePoolsService(reactor, cls.pool_type)
 
         service = cls._service_factory(
