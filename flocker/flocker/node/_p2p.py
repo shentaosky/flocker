@@ -98,7 +98,8 @@ class ResizeDataset(object):
     def run(self, deployer):
         volume = deployer.volume_service.get(
             name=_to_volume_name(self.dataset.dataset_id),
-            size=VolumeSize(maximum_size=self.dataset.maximum_size)
+            size=VolumeSize(maximum_size=self.dataset.maximum_size),
+            storagetype=self.dataset.get_storagetype()
         )
         return deployer.volume_service.set_maximum_size(volume)
 
@@ -129,7 +130,8 @@ class HandoffDataset(object):
         service = deployer.volume_service
         destination = standard_node(self.hostname)
         return service.handoff(
-            service.get(_to_volume_name(self.dataset.dataset_id)),
+            service.get(name=_to_volume_name(self.dataset.dataset_id),
+                        storagetype=self.dataset.get_storagetype()),
             RemoteVolumeManager(destination))
 
 
@@ -159,7 +161,8 @@ class PushDataset(object):
         service = deployer.volume_service
         destination = standard_node(self.hostname)
         return service.push(
-            service.get(_to_volume_name(self.dataset.dataset_id)),
+            service.get(name=_to_volume_name(self.dataset.dataset_id),
+                        storagetype=self.dataset.get_storagetype()),
             RemoteVolumeManager(destination))
 
 
