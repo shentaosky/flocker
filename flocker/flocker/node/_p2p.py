@@ -67,8 +67,7 @@ class CreateDataset(PClass):
         return start_action(
             _logger, _eliot_system(u"createdataset"),
             dataset_id=self.dataset.dataset_id,
-            maximum_size=self.dataset.maximum_size,
-            metadata=self.dataset.metadata
+            maximum_size=self.dataset.maximum_size
         )
 
     def run(self, deployer):
