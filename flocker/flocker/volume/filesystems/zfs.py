@@ -622,14 +622,14 @@ class StoragePool(Service):
         # doesn't support Deferred results, and in any case startup can be
         # synchronous with no ill effects.
         _sync_command_error_squashed(
-            [b"zfs", b"set", b"readonly=on", self._name], self.logger)
+            [b"zfs", b"set", b"readonly=off", self._name], self.logger)
 
         # If the root dataset is read-only then it's not possible to create
         # mountpoints in it for its child datasets.  Avoid mounting it to avoid
         # this problem.  This should be fine since we don't ever intend to put
         # any actual data into the root dataset.
         _sync_command_error_squashed(
-            [b"zfs", b"set", b"canmount=off", self._name], self.logger)
+            [b"zfs", b"set", b"canmount=on", self._name], self.logger)
 
     def _check_for_out_of_space(self, reason):
         """
