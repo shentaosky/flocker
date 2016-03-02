@@ -24,7 +24,7 @@ from twisted.python.failure import Failure
 from twisted.python.filepath import FilePath
 from twisted.internet.endpoints import ProcessEndpoint, connectProtocol
 from twisted.internet.protocol import Protocol
-from twisted.internet.defer import Deferred, succeed, fail, gatherResults
+from twisted.internet.defer import Deferred, succeed, fail, gatherResults, DeferredList
 from twisted.internet.error import ConnectionDone, ProcessTerminated
 from twisted.application.service import Service
 
@@ -529,7 +529,7 @@ class StoragePoolsService(Service):
     def get_pool(self, volume):
         if self._pools.has_key(volume.get_storagetype()):
             return self._pools.get(volume.get_storagetype())
-        warning=b"cannot get pool for type %s  volume %s, use default pool %s" % (volume.get_storagetype(), volume, self._default_pool)
+        warning=b"cannot get pool for type %s  volume %s, use default pool %s" % (volume.get_storagetype(), volume.name.to_bytes, self._default_pool)
         message = ZFS_CONFIG_LOG(message=warning)
         message.write(self.logger)
         return self._default_pool
@@ -553,19 +553,11 @@ class StoragePoolsService(Service):
         return self.get_pool(volume).get(volume)
 
     def enumerate(self):
-        res = []
-
-        def concat_fssets(filesystems, fssets):
-            for fs in filesystems:
-                fssets.append(fs)
-            return
-
+        deferred_list = []
         for pool in self._pools.values():
-            pool_fs = pool.enumerate()
-            pool_fs.addCallback(concat_fssets, res)
-
-        return succeed(res)
-
+            deferred_list.append(pool.enumerate())
+        dl = DeferredList(deferred_list, consumeErrors=False)
+        return dl
 
 @implementer(IStoragePool)
 @with_repr(["_name"])
