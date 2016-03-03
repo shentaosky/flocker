@@ -172,7 +172,7 @@ def _latest_common_snapshot(some, others):
 
 @implementer(IFilesystem)
 @with_cmp(["pool", "dataset"])
-@with_repr(["pool", "dataset"])
+@with_repr(["pool", "dataset","storagetype"])
 class Filesystem(object):
     """A ZFS filesystem.
 
@@ -530,7 +530,7 @@ class StoragePoolsService(Service):
     def get_pool(self, volume):
         if self._pools.has_key(volume.get_storagetype()):
             return self._pools.get(volume.get_storagetype())
-        warning=b"cannot get pool for type %s  volume %s, use default pool %s" % (volume.get_storagetype(), volume.name.to_bytes, self._default_pool)
+        warning = b"cannot get pool for type %s  volume %s, use default pool %s" % (volume.get_storagetype(), volume.name.to_bytes, self._default_pool)
         message = ZFS_CONFIG_LOG(message=warning)
         message.write(self.logger)
         return self._default_pool
@@ -765,7 +765,7 @@ class StoragePool(Service):
         dataset = volume_to_dataset(volume)
         mount_path = self._mount_root.child(dataset)
         return Filesystem(
-            self._name, dataset, mount_path, volume.size)
+            pool=self._name, dataset=dataset, mountpoint=mount_path, size=volume.size, storagetype=self._storagetype)
 
     def enumerate(self):
         listing = _list_filesystems(self._reactor, self._name)
