@@ -33,7 +33,7 @@ from flocker.common._node_config import AGENT_CONFIG
 from flocker.control._model import StorageType, METADATA_STORAGETYPE
 from .interfaces import (
     IFilesystemSnapshots, IStoragePool, IFilesystem,
-    FilesystemAlreadyExists)
+    FilesystemAlreadyExists, IStoragePoolsService)
 
 from .._model import VolumeSize
 from uuid import UUID, uuid4
@@ -204,7 +204,7 @@ class Filesystem(object):
             from twisted.internet import reactor
         self._reactor = reactor
 
-        self._node_id, self._dataset_id = self.parse_name()
+        self._node_id, self._dataset_id = self.get_nodeid_datastid()
 
     def _exists(self):
         """
@@ -241,7 +241,7 @@ class Filesystem(object):
             def find_dataset(fs):
                 results = []
                 for filesystem in fs:
-                    node_id, dataset_id = filesystem.parse_name()
+                    node_id, dataset_id = filesystem.get_nodeid_datastid()
                     if dataset_id == self._dataset_id:
                         results.append(filesystem)
                 return results
@@ -280,7 +280,7 @@ class Filesystem(object):
     def get_path(self):
         return self._mountpoint
 
-    def parse_name(self):
+    def get_nodeid_datastid(self):
         node_id, dataset_id = self.dataset.split(b".", 1)
         # We convert to a UUID object for validation purposes:
         UUID(node_id)
@@ -491,7 +491,7 @@ def volume_to_dataset(volume):
                        volume.name.to_bytes())
 
 
-@implementer(IStoragePool)
+@implementer([IStoragePool, IStoragePoolsService])
 class StoragePoolsService(Service):
     """
     A ZFS Storage service to manage multiple zfs storage pools
@@ -510,44 +510,29 @@ class StoragePoolsService(Service):
     def startService(self):
         Service.startService(self)
         pools_config = yaml.safe_load(AGENT_CONFIG.getContent())
-        storage_pools = {}
         for config in pools_config[b"dataset"][b"pools"]:
             storagetype = StorageType.lookupByValue(config.get(METADATA_STORAGETYPE, StorageType.DEFAULT.value))
             pool = StoragePool(reactor=self._reactor,
                                mountpoint=FilePath(config.get(b"mountpoint", "/flocker")),
                                storagetype=storagetype,
                                name=config.get(b"name", "flocker"))
-            if storage_pools.has_key(storagetype):
+            if self._pools.has_key(storagetype):
                 sys.stderr.write("multiple storage pools for type %s" % storagetype.value)
                 sys.exit(1)
 
-            storage_pools[storagetype] = pool
+            self._pools[storagetype] = pool
+            pool.startService()
 
-        if len(storage_pools.items()) == 0:
+        if len(self._pools.items()) == 0:
             sys.stderr.write("at least one storage pool should be config\n")
             sys.exit(1)
 
         def select_default_pool(pools):
-            # for now ,self._pools contains at least a pool in below type
             for pooltype in [StorageType.BRONZE, StorageType.SILVER, StorageType.GOLD]:
                 if pools.has_key(pooltype):
                     return pools.get(pooltype)
 
-        # if pool type is given, select only one storage pool
-        if self._pool_type is not None:
-            # use _pool_type if existed, otherwise default to others
-            if self._pools.has_key(self._pool_type):
-                self._pools = {self._pool_type: self._pools.get(self._pool_type)}
-            else:
-                res = select_default_pool(storage_pools)
-                self._pools = {res.get_storagetype: res}
-            self._default_pool = self._pools.values().pop()
-        else:
-            self._default_pool = select_default_pool(storage_pools)
-            self._pools = storage_pools
-
-        for pool in self._pools.values():
-            pool.startService()
+        self._default_pool = select_default_pool(self.storage_pools)
 
     def get_pool(self, volume):
         if self._pools.has_key(volume.get_storagetype()):
@@ -594,6 +579,29 @@ class StoragePoolsService(Service):
 
         dl.addCallback(listed_fs)
         return dl
+
+    def search_dataset(self, volume_name):
+        task_list = []
+
+        for pool in self._pools.itervalues():
+            task_list.append(pool.enumerate())
+
+        d = DeferredList(task_list, consumeErrors=False)
+
+        def get_volumes(task_results):
+            filesystems = []
+            for (success, fs_list) in task_results:
+                if success is False or fs_list is None:
+                    continue
+                for fs in fs_list:
+                    fs_node_id, fs_name = fs.get_nodeid_datasetid()
+                    if fs_name == volume_name:
+                        filesystems.append(fs)
+                filesystems.append(fs_list)
+            return filesystems
+        return d.addCallback(get_volumes())
+
+
 
 @implementer(IStoragePool)
 @with_repr(["_name", "_storagetype"])

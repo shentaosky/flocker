@@ -171,7 +171,7 @@ class VolumeService(Service):
 
         :return: A ``Deferred`` that fires with a :class:`Volume`.
         """
-        volume = self.get(name)
+        volume = self.get(name, storagetype=parent.storagetype)
         d = self.pool.clone_to(parent, volume)
 
         def created(filesystem):
@@ -286,7 +286,7 @@ class VolumeService(Service):
         pushing = getting_snapshots.addCallback(got_snapshots)
         return pushing
 
-    def receive(self, volume_node_id, volume_name, input_file):
+    def receive(self, volume_node_id, volume_name, storagetype, input_file):
         """
         Process a volume's data that can be read from a file-like object.
 
@@ -305,12 +305,12 @@ class VolumeService(Service):
         """
         if volume_node_id == self.node_id:
             raise ValueError()
-        volume = Volume(node_id=volume_node_id, name=volume_name, service=self)
+        volume = Volume(node_id=volume_node_id, name=volume_name, service=self, storagetype=storagetype)
         with volume.get_filesystem().writer() as writer:
             for chunk in iter(lambda: input_file.read(1024 * 1024), b""):
                 writer.write(chunk)
 
-    def acquire(self, volume_node_id, volume_name):
+    def acquire(self, volume_node_id, volume_name, storagetype):
         """
         Take ownership of a volume.
 
@@ -327,7 +327,7 @@ class VolumeService(Service):
         """
         if volume_node_id == self.node_id:
             return fail(ValueError("Can't acquire already-owned volume"))
-        volume = Volume(node_id=volume_node_id, name=volume_name, service=self)
+        volume = Volume(node_id=volume_node_id, name=volume_name, service=self, storagetype=storagetype)
         return volume.change_owner(self.node_id)
 
     def handoff(self, volume, destination):
@@ -428,8 +428,7 @@ class VolumeScript(object):
 
         :return: The started ``VolumeService``.
         """
-        cls.pool_type = StorageType.lookupByValue(options.get("pool", StorageType.DEFAULT.value))
-        pool = StoragePoolsService(reactor, cls.pool_type)
+        pool = StoragePoolsService(reactor)
 
         service = cls._service_factory(
             config_path=options["config"], pool=pool, reactor=reactor)

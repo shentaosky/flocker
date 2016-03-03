@@ -6,11 +6,12 @@ import sys
 
 from twisted.python.usage import Options
 from twisted.python.filepath import FilePath
-from twisted.internet.defer import succeed, maybeDeferred
+from twisted.internet.defer import succeed, maybeDeferred, DeferredList, fail
 
 from zope.interface import implementer
 from flocker.common._node_config import DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT
 from flocker.common._node_config import FLOCKER_POOL
+from flocker.control._model import StorageType
 
 from .service import (
     Volume, VolumeScript, ICommandLineVolumeScript, VolumeName,
@@ -73,26 +74,40 @@ class _SnapshotsSubcommandOptions(Options):
     * owner-node-id: The node ID of the volume manager that owns the volume.
 
     * name: The name of the volume.
+
+    * pool: The name of the deseired storage type.
     """
 
-    def parseArgs(self, node_id, name):
+    def parseArgs(self, node_id, name, pool):
         self["node_id"] = node_id.decode("ascii")
         self["name"] = name
+        self._storagetype = StorageType.lookupByValue(pool)
 
     def run(self, service):
 
-        volume = Volume(node_id=self["node_id"],
-                        name=VolumeName.from_bytes(self["name"]),
-                        service=service)
-        filesystem = volume.get_filesystem()
-        snapshots = filesystem.snapshots()
+        d = service.pool.search_dataset(self["name"])
 
-        def got_snapshots(snapshots):
-            for snapshot in snapshots:
+        # get the matching dataset and rename to sender.node_id and get the snapshots
+
+        def got_snapshots(volume):
+            for snapshot in volume.get_filesystem().snapshots:
                 sys.stdout.write(snapshot.name + b"\n")
+            return succeed()
 
-        snapshots.addCallback(got_snapshots)
-        return snapshots
+        def rename_to_send_nodeid(filesystems):
+            if len(filesystems) > 1:
+                return fail(b"dataset_name: %s, matching result %s" % self["name"], filesystems)
+            for fs in filesystems:
+                node_id, dataset_id = fs.get_nodeid_datasetid()
+                if node_id == self[node_id]:
+                    return fs
+                volume = Volume(node_id=node_id, name=dataset_id, service=service, storagetype=fs.storagetype)
+                return volume.change_owner(self["node_id"])
+
+        d.addCallback(rename_to_send_nodeid)
+        d.addCallback(got_snapshots)
+
+        return d
 
 
 class _ReceiveSubcommandOptions(Options):
@@ -108,20 +123,23 @@ class _ReceiveSubcommandOptions(Options):
     * owner-node-id: The node ID of the volume manager that owns the volume.
 
     * name: The name of the volume.
+
+    * pool: The name of the deseired storage type.
     """
 
     synopsis = "<owner-node-id> <name>"
 
-    def parseArgs(self, node_id, name):
+    def parseArgs(self, node_id, name, pool):
         self["node_id"] = node_id.decode("ascii")
         self["name"] = name
+        self._storagetype = StorageType.lookupByValue(pool)
 
     def run(self, service):
         """Run the action for this sub-command.
 
         :param VolumeService service: The volume manager service to utilize.
         """
-        service.receive(self["node_id"], VolumeName.from_bytes(self["name"]),
+        service.receive(self["node_id"], VolumeName.from_bytes(self["name"]), self._storagetype,
                         sys.stdin)
 
 
@@ -141,13 +159,16 @@ class _AcquireSubcommandOptions(Options):
     * owner-node-id: The node ID of the volume manager that owns the volume.
 
     * name: The name of the volume.
+
+    * pool: The name of the deseired storage type.
     """
 
     synopsis = "<owner-node-id> <name>"
 
-    def parseArgs(self, node_id, name):
+    def parseArgs(self, node_id, name, pool):
         self["node_id"] = node_id.decode("ascii")
         self["name"] = name
+        self._storagetype = StorageType.lookupByValue(pool)
 
     def run(self, service):
         """
@@ -155,8 +176,9 @@ class _AcquireSubcommandOptions(Options):
 
         :param VolumeService service: The volume manager service to utilize.
         """
-        d = service.acquire(self["node_id"],
-                            VolumeName.from_bytes(self["name"]))
+        d = service.acquire(volume_node_id=self["node_id"],
+                            volume_name=VolumeName.from_bytes(self["name"]),
+                            storagetype=self._storagetype)
 
         def acquired(_):
             sys.stdout.write(service.node_id.encode("ascii"))
@@ -181,14 +203,17 @@ class _CloneToSubcommandOptions(Options):
     * parent name: The name of the parent volume.
 
     * child name: The name of the new volume.
+
+    * pool: The name of the deseired storage type.
     """
 
     synopsis = "<owner node id> <parent name> <child name>"
 
-    def parseArgs(self, node_id, parent_name, child_name):
+    def parseArgs(self, node_id, parent_name, child_name, pool):
         self["node_id"] = node_id.decode("ascii")
         self["parent_name"] = parent_name
         self["child_name"] = child_name
+        self._storagetype = StorageType.lookupByValue(pool)
 
     def run(self, service):
         """
@@ -198,7 +223,7 @@ class _CloneToSubcommandOptions(Options):
         """
         parent = Volume(node_id=self["node_id"],
                         name=VolumeName.from_bytes(self["parent_name"]),
-                        service=service)
+                        service=service, storagetype=self._storagetype)
         return service.clone_to(
             parent, VolumeName.from_bytes(self["child_name"]))
 

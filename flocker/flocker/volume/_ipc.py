@@ -117,10 +117,10 @@ class RemoteVolumeManager(object):
         data = self._destination.get_output(
             [b"flocker-volume",
              b"--config", self._config_path.path,
-             b"--pool", volume.get_storagetype().value,
              b"snapshots",
              volume.node_id.encode("ascii"),
-             volume.name.to_bytes()]
+             volume.name.to_bytes(),
+             volume.get_storagetype().value]
         )
         return succeed([
             Snapshot(name=name)
@@ -131,29 +131,30 @@ class RemoteVolumeManager(object):
     def receive(self, volume):
         return self._destination.run([b"flocker-volume",
                                       b"--config", self._config_path.path,
-                                      b"--pool", volume.get_storagetype().value,
                                       b"receive",
                                       volume.node_id.encode(b"ascii"),
-                                      volume.name.to_bytes()])
+                                      volume.name.to_bytes(),
+                                      volume.get_storagetype().value])
 
     def acquire(self, volume):
         return self._destination.get_output(
             [b"flocker-volume",
              b"--config", self._config_path.path,
-             b"--pool", volume.get_storagetype().value,
              b"acquire",
              volume.node_id.encode(b"ascii"),
-             volume.name.to_bytes()]).decode("ascii")
+             volume.name.to_bytes(),
+             volume.get_storagetype().value
+             ]).decode("ascii")
 
     def clone_to(self, parent, name):
         return self._destination.get_output(
             [b"flocker-volume",
              b"--config", self._config_path.path,
-             b"--pool", parent.get_storagetype().value,
              b"clone_to",
              parent.node_id.encode(b"ascii"),
              parent.name.to_bytes(),
-             name.to_bytes()]).decode("ascii")
+             name.to_bytes()],
+             parent.get_storagetype().value).decode("ascii")
 
 
 @implementer(IRemoteVolumeManager)

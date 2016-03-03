@@ -119,6 +119,17 @@ class IFilesystem(Interface):
     def __hash__():
         """Equal objects should have the same hash."""
 
+class IStoragePoolsService(Interface):
+    """
+    Service to manager multiple IStoragePool instance on the same node
+    """
+
+    def search_dataset(dataset_id):
+        """
+        Search dataset on underlying storage pools
+
+        :return Filesystem instance list that represent this dataset_id
+        """
 
 class IStoragePool(Interface):
     """
