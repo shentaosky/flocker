@@ -180,6 +180,8 @@ class Filesystem(object):
     filesystem.  This will likely grow into a more sophisticiated
     implementation over time.
     """
+    logger=Logger()
+
     def __init__(self, pool, dataset, mountpoint=None, size=None,
                  reactor=None, storagetype=StorageType.DEFAULT):
         """
@@ -331,6 +333,8 @@ class Filesystem(object):
                 snapshot,
             ]
 
+        ZFS_CONFIG_LOG(message="zfs send %s " % identifier).write(self.logger)
+
         process = Popen([b"zfs", b"send"] + identifier, stdout=PIPE)
         try:
             yield process.stdout
@@ -368,6 +372,7 @@ class Filesystem(object):
             # If the filesystem doesn't already exist then this is a complete
             # data stream.
             cmd = [b"zfs", b"receive", self.name]
+        ZFS_CONFIG_LOG(message="receive cmd: %s " % cmd).write(self.logger)
         process = Popen(cmd, stdin=PIPE)
         succeeded = False
         try:
@@ -505,27 +510,44 @@ class StoragePoolsService(Service):
     def startService(self):
         Service.startService(self)
         pools_config = yaml.safe_load(AGENT_CONFIG.getContent())
+        storage_pools = {}
         for config in pools_config[b"dataset"][b"pools"]:
             storagetype = StorageType.lookupByValue(config.get(METADATA_STORAGETYPE, StorageType.DEFAULT.value))
             pool = StoragePool(reactor=self._reactor,
                                mountpoint=FilePath(config.get(b"mountpoint", "/flocker")),
                                storagetype=storagetype,
                                name=config.get(b"name", "flocker"))
-            if self._pool_type is not None and self._pool_type != storagetype:
-                continue
-            if self._pools.has_key(storagetype):
+            if storage_pools.has_key(storagetype):
                 sys.stderr.write("multiple storage pools for type %s" % storagetype.value)
                 sys.exit(1)
 
-            self._pools[storagetype] = pool
-            pool.startService()
+            storage_pools[storagetype] = pool
 
-        config_logs = "config pools %s " % self._pools
-        ZFS_CONFIG_LOG(message=config_logs).write(self.logger)
-        if len(self._pools.items()) == 0:
-            sys.stderr("at least one storage pool should be config")
+        if len(storage_pools.items()) == 0:
+            sys.stderr.write("at least one storage pool should be config\n")
             sys.exit(1)
-        self._default_pool = self._pools.values().pop()
+
+        def select_default_pool(pools):
+            # for now ,self._pools contains at least a pool in below type
+            for pooltype in [StorageType.BRONZE, StorageType.SILVER, StorageType.GOLD]:
+                if pools.has_key(pooltype):
+                    return pools.get(pooltype)
+
+        # if pool type is given, select only one storage pool
+        if self._pool_type is not None:
+            # use _pool_type if existed, otherwise default to others
+            if self._pools.has_key(self._pool_type):
+                self._pools = {self._pool_type: self._pools.get(self._pool_type)}
+            else:
+                res = select_default_pool(storage_pools)
+                self._pools = {res.get_storagetype: res}
+            self._default_pool = self._pools.values().pop()
+        else:
+            self._default_pool = select_default_pool(storage_pools)
+            self._pools = storage_pools
+
+        for pool in self._pools.values():
+            pool.startService()
 
     def get_pool(self, volume):
         if self._pools.has_key(volume.get_storagetype()):
@@ -574,7 +596,7 @@ class StoragePoolsService(Service):
         return dl
 
 @implementer(IStoragePool)
-@with_repr(["_name"])
+@with_repr(["_name", "_storagetype"])
 @with_cmp(["_name", "_mount_root"])
 class StoragePool(Service):
     """
