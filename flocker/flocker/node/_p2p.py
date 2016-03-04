@@ -383,7 +383,7 @@ def find_dataset_changes(uuid, current_state, desired_state):
         for new_dataset in desired:
             if new_dataset.dataset_id in local_current_dataset_ids:
                 for cur_dataset in current_datasets[uuid]:
-                    if cur_dataset.dataset_id != new_dataset.dataset_id:
+                    if cur_dataset.dataset_id != new_dataset.dataset_id and new_dataset.deleted is True:
                         continue
                     if cur_dataset.maximum_size != new_dataset.maximum_size:
                         resizing.add(new_dataset)
@@ -402,6 +402,8 @@ def find_dataset_changes(uuid, current_state, desired_state):
                 continue
             for dataset in desired:
                 if dataset.dataset_id in local_current_dataset_ids:
+                    if dataset.deleted is True:
+                        continue
                     going.add(DatasetHandoff(
                         dataset=dataset, hostname=hostname))
 
