@@ -28,7 +28,7 @@ from twisted.internet.defer import Deferred, succeed, fail, gatherResults, Defer
 from twisted.internet.error import ConnectionDone, ProcessTerminated
 from twisted.application.service import Service
 
-from .errors import MaximumSizeTooSmall, RenameDatasetFail
+from .errors import MaximumSizeTooSmall
 from flocker.common._node_config import AGENT_CONFIG
 from flocker.control._model import StorageType, METADATA_STORAGETYPE
 from .interfaces import (
@@ -204,7 +204,7 @@ class Filesystem(object):
             from twisted.internet import reactor
         self._reactor = reactor
 
-        self._node_id, self._dataset_id = self.get_nodeid_datastid()
+        self._node_id, self._dataset_id = self.get_nodeid_datasetid()
 
     def _exists(self):
         """
@@ -223,51 +223,13 @@ class Filesystem(object):
         return self.storagetype
 
     def snapshots(self):
-        def list_snapshots():
+        if self._exists():
             zfs_snapshots = ZFSSnapshots(self._reactor, self)
             d = zfs_snapshots.list()
             d.addCallback(lambda snapshots:
                           [Snapshot(name=name)
                            for name in snapshots])
             return d
-
-        if self._exists():
-            return list_snapshots()
-        else:
-            # rename dataset that are not locally owned or remotely owned
-            filesystems = _list_filesystems(self._reactor, self.pool)
-            filesystems.addCallback(_listed, self.pool, self.get_storagetype)
-
-            def find_dataset(fs):
-                results = []
-                for filesystem in fs:
-                    node_id, dataset_id = filesystem.get_nodeid_datastid()
-                    if dataset_id == self._dataset_id:
-                        results.append(filesystem)
-                return results
-            filesystems.addCallback(find_dataset)
-
-            # if rename failed, just return fail, and retry on next iteration
-            # assume on receiver side, the dataset is not in use
-            def rename_failed(err):
-                return Failure(RenameDatasetFail(err))
-
-            # return snapshots if succeed
-            def rename_succeed(id):
-                return list_snapshots()
-
-            def rename_dataset(datasets):
-                # if dataset is empty, just return succeed
-                if len(datasets) == 0:
-                    return succeed([])
-                if len(datasets) > 1:
-                    return fail([b"multiple dataset existed for %d " % self._dataset_id])
-                d = zfs_command(self._reactor, [b"rename", datasets[0].name, self.name])
-                d.addCallbacks(rename_succeed, rename_failed)
-                return d
-            filesystems.addCallback(rename_dataset)
-            return filesystems
-
         return succeed([])
 
     @property
@@ -280,7 +242,7 @@ class Filesystem(object):
     def get_path(self):
         return self._mountpoint
 
-    def get_nodeid_datastid(self):
+    def get_nodeid_datasetid(self):
         node_id, dataset_id = self.dataset.split(b".", 1)
         # We convert to a UUID object for validation purposes:
         UUID(node_id)
@@ -532,7 +494,7 @@ class StoragePoolsService(Service):
                 if pools.has_key(pooltype):
                     return pools.get(pooltype)
 
-        self._default_pool = select_default_pool(self.storage_pools)
+        self._default_pool = select_default_pool(self._pools)
 
     def get_pool(self, volume):
         if self._pools.has_key(volume.get_storagetype()):
@@ -580,7 +542,7 @@ class StoragePoolsService(Service):
         dl.addCallback(listed_fs)
         return dl
 
-    def search_dataset(self, volume_name):
+    def search_dataset(self, dataset_name):
         task_list = []
 
         for pool in self._pools.itervalues():
@@ -588,18 +550,17 @@ class StoragePoolsService(Service):
 
         d = DeferredList(task_list, consumeErrors=False)
 
-        def get_volumes(task_results):
+        def get_filesystems(task_results):
             filesystems = []
             for (success, fs_list) in task_results:
                 if success is False or fs_list is None:
                     continue
                 for fs in fs_list:
                     fs_node_id, fs_name = fs.get_nodeid_datasetid()
-                    if fs_name == volume_name:
+                    if fs_name == dataset_name:
                         filesystems.append(fs)
-                filesystems.append(fs_list)
             return filesystems
-        return d.addCallback(get_volumes())
+        return d.addCallback(get_filesystems)
 
 
 
