@@ -622,6 +622,10 @@ class StoragePool(Service):
         _sync_command_error_squashed(
             [b"zfs", b"set", b"canmount=on", self._name], self.logger)
 
+        # to workaround a bug report by https://github.com/zfsonlinux/zfs/issues/1548
+        _sync_command_error_squashed(
+            [b"zfs", b"set", b"xattr=sa", self._name], self.logger)
+
     def _check_for_out_of_space(self, reason):
         """
         Translate a ZFS command failure into ``MaximumSizeTooSmall`` if that is
