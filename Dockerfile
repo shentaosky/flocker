@@ -8,7 +8,7 @@ WORKDIR     /root
 RUN         yum repolist && yum update -y && yum install -y epel-release openssh-server redhat-lsb && \
             yum localinstall -y --nogpgcheck https://download.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm && \
             yum localinstall -y --nogpgcheck http://archive.zfsonlinux.org/epel/zfs-release.el7.noarch.rpm && \
-            yum install -y kernel-devel zfs wget git python-devel libffi-devel openssl-devel iptables
+            yum install -y kernel-devel zfs wget git python-devel libffi-devel openssl-devel iptables && yum clean all
 
 # install flocker
 ENV         FLOCKER_VERSION 1.9.0-1
