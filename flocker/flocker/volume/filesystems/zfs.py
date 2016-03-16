@@ -120,8 +120,21 @@ def _sync_command_error_squashed(arguments, logger):
     :param eliot.Logger logger: The log writer to use to log errors running the
         zfs command.
     """
+    _sync_command(arguments, logger)
+
+def _sync_command(arguments, logger):
+    """
+    Synchronously run a command-line tool with the given arguments.
+
+    :param arguments: A ``list`` of ``bytes``, command-line arguments to
+        execute.
+
+    :param eliot.Logger logger: The log writer to use to log errors running the
+        zfs command.
+    """
     message = None
     log_arguments = b" ".join(arguments)
+    output = ""
     try:
         process = Popen(arguments, stdout=PIPE, stderr=STDOUT)
         output = process.stdout.read()
@@ -135,7 +148,7 @@ def _sync_command_error_squashed(arguments, logger):
                 zfs_command=log_arguments, output=output, status=status)
     if message is not None:
         message.write(logger)
-
+    return output
 
 @attributes(["name"])
 class Snapshot(object):
@@ -243,6 +256,7 @@ class Filesystem(object):
         return self._mountpoint
 
     def get_nodeid_datasetid(self):
+        # code in service.enumerate() flocker/volumes/service.py use fs path , instead of volume name
         node_id, dataset_id = self.dataset.split(b".", 1)
         # We convert to a UUID object for validation purposes:
         UUID(node_id)
@@ -625,6 +639,38 @@ class StoragePool(Service):
         # to workaround a bug report by https://github.com/zfsonlinux/zfs/issues/1548
         _sync_command_error_squashed(
             [b"zfs", b"set", b"xattr=sa", self._name], self.logger)
+
+        self._sync_mountpoint()
+
+    def _sync_mountpoint(self):
+        # as code in VolumeService.enumerate() flocker/volumes/service.py assume mountpoint identical with dataset name
+        # if crash happended when reset zfs mountpoint previously, then flocker with encouter DatasetNotExist Error.
+        # so keep keep dataset name and mountpoint in sync
+        # http://172.16.1.41:10080/flocker/flocker_image_build/issues/13
+        # TODO: should only manage dataset owned by this node
+
+        output = _sync_command([b"zfs", b"list",
+                                      # Descend the hierarchy to a depth of one (ie, list the direct
+                                      # children of the pool)
+                                      b"-d", b"1",
+                                      # Omit the output header
+                                      b"-H",
+                                      # Output exact, machine-parseable values (eg 65536 instead of 64K)
+                                      b"-p",
+                                      # Output each dataset's name, mountpoint and refquota
+                                      b"-o", b"name,mountpoint,refquota",
+                                      # Look at this pool
+                                      self._name],
+                               self.logger)
+        for line in output.splitlines():
+            name, mountpoint, refquota = line.split(b'\t')
+            dataset_name = name[len(self._name) + 1:]
+            mountpath = FilePath(mountpoint)
+            if dataset_name != "" and dataset_name != mountpath.basename():
+               _sync_command_error_squashed([b"zfs", b"set", b"mountpoint=" +
+                                            mountpath.dirname()+"/"+dataset_name,
+                                            name],
+                                           self.logger)
 
     def _check_for_out_of_space(self, reason):
         """
