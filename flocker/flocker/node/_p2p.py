@@ -202,7 +202,6 @@ class DeleteDataset(PClass):
         d.addCallback(got_volumes)
         return d
 
-
 @implementer(IDeployer)
 class P2PManifestationDeployer(object):
     """
@@ -235,32 +234,30 @@ class P2PManifestationDeployer(object):
         def map_volumes_to_size(volumes):
             primary_manifestations = {}
             for volume in volumes:
-                if volume.node_id == self.volume_service.node_id:
-                    # FLOC-1240 non-primaries should be added in too
-                    path = volume.get_filesystem().get_path()
-                    primary_manifestations[path] = (
-                        volume.name.dataset_id, volume.size.maximum_size)
+                path = volume.get_filesystem().get_path()
+                primary_manifestations[path] = (
+                    volume.name.dataset_id, volume.size.maximum_size, volume.node_id)
             return primary_manifestations
         volumes.addCallback(map_volumes_to_size)
 
         def got_volumes(available_manifestations):
-            manifestation_paths = {dataset_id: path for (path, (dataset_id, _))
+            manifestation_paths = {dataset_id: path for (path, (dataset_id, _, _))
                                    in available_manifestations.items()}
 
-            manifestations = list(
-                Manifestation(dataset=Dataset(dataset_id=dataset_id,
-                                              maximum_size=maximum_size),
-                              primary=True)
-                for (dataset_id, maximum_size) in
-                available_manifestations.values())
-
+            manifestations = {}
+            for (dataset_id, maximum_size, node_id) in available_manifestations.values():
+                primary = False
+                if node_id == self.volume_service.node_id:
+                    primary = True
+                manifestations[dataset_id] = Manifestation(dataset=Dataset(dataset_id=dataset_id,
+                                                                           maximum_size=maximum_size),
+                                                           primary=primary)
             return NodeLocalState(
                 node_state=NodeState(
                     uuid=self.node_uuid,
                     hostname=self.hostname,
                     applications=None,
-                    manifestations={manifestation.dataset_id: manifestation for
-                                    manifestation in manifestations},
+                    manifestations=manifestations,
                     paths=manifestation_paths,
                     devices={},
                 )
@@ -277,16 +274,17 @@ class P2PManifestationDeployer(object):
         https://clusterhq.atlassian.net/browse/FLOC-1425 for leases, a
         better solution.
         """
-        local_state = cluster_state.get_node(self.node_uuid)
+
+        local_state_primary = cluster_state.get_node(self.node_uuid)
         # We need to know applications (for now) to see if we should delay
         # deletion or handoffs. Eventually this will rely on leases instead.
-        if local_state.applications is None:
+        if local_state_primary.applications is None:
             return sequentially(changes=[])
         phases = []
 
         not_in_use_datasets = NotInUseDatasets(
             node_uuid=self.node_uuid,
-            local_applications=local_state.applications,
+            local_applications=local_state_primary.applications,
             leases=configuration.leases,
         )
 
@@ -321,8 +319,32 @@ class P2PManifestationDeployer(object):
                 for dataset in deleting
                 ]))
 
+        obsoleted = not_in_use_datasets(find_obsolete_datasets(desired_state=configuration, local_state=local_state))
+        if obsoleted:
+            phases.append(in_parallel(changes=[
+                DeleteDataset(dataset=dataset)
+                for dataset in obsoleted
+            ]))
+
         return sequentially(changes=phases,
                             sleep_when_empty=timedelta(seconds=1))
+
+
+def find_obsolete_datasets(desired_state, local_state):
+    obsoleted_datasets = []
+
+    desired_datasets = {}
+    for node in desired_state.nodes:
+        for manifestation in node.manifestations.values():
+            if manifestation.dataset.deleted:
+                desired_datasets[manifestation.dataset_id] = manifestation.dataset
+
+    for manifestation in local_state.node_state.manifestations.values():
+        if manifestation.primary is False:
+            if manifestation.dataset_id in desired_datasets.keys():
+                obsoleted_datasets.append(manifestation.dataset)
+
+    return obsoleted_datasets
 
 
 def find_dataset_changes(uuid, current_state, desired_state):
