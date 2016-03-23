@@ -41,12 +41,12 @@ from twisted.internet.defer import succeed, maybeDeferred
 from twisted.internet.protocol import ReconnectingClientFactory
 from twisted.protocols.tls import TLSMemoryBIOFactory
 
-from . import run_state_change, NoOp
+from . import run_state_change, NoOp, NodeLocalState
 
 from ..common import gather_deferreds
 from ..control import (
     NodeStateCommand, IConvergenceAgent, AgentAMP, SetNodeEraCommand,
-)
+    NodeState)
 from ..control._persistence import to_unserialized_json
 
 
@@ -467,9 +467,36 @@ class ConvergenceLoop(object):
                 discover.addActionFinish()
             d = DeferredContext(discover.result)
 
+        def get_primary_manifestions(local_state):
+            node_state = local_state.node_state
+            manifestation_paths = {}
+            manifestations = {}
+
+            if node_state.manifestations is None:
+                return local_state
+
+            for manifestation in node_state.manifestations.values():
+                if manifestation.primary is True:
+                    dataset_id = manifestation.dataset.dataset_id
+                    manifestation_paths[dataset_id] = node_state.paths.get(dataset_id)
+                    manifestations[dataset_id] = manifestation
+
+            return NodeLocalState(
+                node_state=NodeState(
+                    uuid=node_state.uuid,
+                    hostname=node_state.hostname,
+                    applications=node_state.applications,
+                    manifestations=manifestations,
+                    paths=manifestation_paths,
+                    devices=node_state.devices,
+                )
+            )
+
         def got_local_state(local_state):
-            self._last_discovered_local_state = local_state
-            cluster_state_changes = local_state.shared_state_changes()
+            control_service_shared_local_state = get_primary_manifestions(local_state)
+
+            self._last_discovered_local_state = control_service_shared_local_state
+            cluster_state_changes = control_service_shared_local_state.shared_state_changes()
             # Current cluster state is likely out of date as regards the local
             # state, so update it accordingly.
             #
