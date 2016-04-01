@@ -724,6 +724,8 @@ class StoragePool(Service):
         d.addCallback(got_snapshots)
         d.addCallback(lambda _: zfs_command(
             self._reactor, [b"destroy", filesystem.name]))
+
+        d.addCallback(_remove_dir, filesystem.get_path().path)
         return d
 
     def set_maximum_size(self, volume):
@@ -764,14 +766,10 @@ class StoragePool(Service):
         new_filesystem = self.get(new_volume)
         d = zfs_command(self._reactor,
                         [b"rename", old_filesystem.name, new_filesystem.name])
+
         self._created(d, new_volume)
 
-        def remounted(ignored):
-            # Use os.rmdir instead of FilePath.remove since we don't want
-            # recursive behavior. If the directory is non-empty, something
-            # went wrong (or there is a race) and we don't want to lose data.
-            os.rmdir(old_filesystem.get_path().path)
-        d.addCallback(remounted)
+        d.addCallback(_remove_dir, old_filesystem.get_path().path)
         d.addCallback(lambda _: new_filesystem)
         return d
 
@@ -838,6 +836,13 @@ class _DatasetInfo(object):
     :ivar int refquota: The value of the dataset's ``refquota`` property (the
         maximum number of bytes the dataset is allowed to have a reference to).
     """
+
+def _remove_dir(ignore, path):
+    try:
+        os.rmdir(path)
+    except Exception as e:
+        print b"failed while remove %s , err %s" % (path, e.message)
+        raise CommandFailed
 
 
 def _listed(filesystems, pool, storagetype):
