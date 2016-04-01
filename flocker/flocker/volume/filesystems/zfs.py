@@ -88,6 +88,18 @@ def zfs_command(reactor, arguments):
                                os.environ)
     d = connectProtocol(endpoint, _AccumulatingProtocol())
     d.addCallback(lambda protocol: protocol._result)
+
+    logger = Logger()
+
+    def async_command_failed(reason, args):
+        message = ZFS_ERROR(
+            zfs_command=args,
+            output=str(reason), status=1
+        )
+        message.write(logger)
+        raise CommandFailed
+
+    d.addErrback(async_command_failed, b" zfs ".join(arguments))
     return d
 
 
