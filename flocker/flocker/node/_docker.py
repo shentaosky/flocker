@@ -892,100 +892,101 @@ class DockerClient(object):
         return d
 
     def list(self):
-        def _list():
-            result = set()
-            ids = [d[u"Id"] for d in
-                   self._client.containers(quiet=True, all=True)]
-            for i in ids:
+        return deferToThread(self.list_sync)
 
-                try:
-                    data = self._client.inspect_container(i)
-                except APIError as e:
-                    # The container ID returned by the list API call above, may
-                    # have been removed in another thread.
-                    if e.response.status_code == NOT_FOUND:
-                        continue
-                    else:
-                        raise
+    def list_sync(self):
+        result = set()
+        ids = [d[u"Id"] for d in
+               self._client.containers(quiet=True, all=True)]
+        for i in ids:
 
-                state = (u"active" if data[u"State"][u"Running"]
-                         else u"inactive")
-                name = data[u"Name"]
-                # Since tags (e.g. "busybox") aren't stable, ensure we're
-                # looking at the actual image by using the hash:
-                image = data[u"Image"]
-                image_tag = data[u"Config"][u"Image"]
-                command = data[u"Config"][u"Cmd"]
-                with start_action(
-                    action_type=u"flocker:node:docker:inspect_image",
-                    container=i,
-                    running=data[u"State"][u"Running"]
-                ):
-                    image_data = self._image_data(image)
-                if image_data.command == command:
-                    command = None
-                port_bindings = data[u"NetworkSettings"][u"Ports"]
-                if port_bindings is not None:
-                    ports = self._parse_container_ports(port_bindings)
+            try:
+                data = self._client.inspect_container(i)
+            except APIError as e:
+                # The container ID returned by the list API call above, may
+                # have been removed in another thread.
+                if e.response.status_code == NOT_FOUND:
+                    continue
                 else:
-                    ports = list()
-                volumes = []
-                binds = data[u"HostConfig"]['Binds']
-                if binds is not None:
-                    for bind_config in binds:
-                        parts = bind_config.split(':', 2)
-                        node_path, container_path = parts[:2]
-                        volumes.append(
-                            Volume(container_path=FilePath(container_path),
-                                   node_path=FilePath(node_path))
-                        )
-                # if name.startswith(u"/" + self.namespace):
-                #name = name[1 + len(self.namespace):]
-                # else:
-                #     continue
-                # Retrieve environment variables for this container,
-                # disregarding any environment variables that are part
-                # of the image, rather than supplied in the configuration.
-                unit_environment = []
-                container_environment = data[u"Config"][u"Env"]
-                if image_data.environment is None:
-                    image_environment = []
-                else:
-                    image_environment = image_data.environment
-                if container_environment is not None:
-                    for environment in container_environment:
-                        if environment not in image_environment:
-                            env_key, env_value = environment.split('=', 1)
-                            unit_environment.append((env_key, env_value))
-                unit_environment = (
-                    Environment(variables=frozenset(unit_environment))
-                    if unit_environment else None
-                )
-                # Our Unit model counts None as the value for cpu_shares and
-                # mem_limit in containers without specified limits, however
-                # Docker returns the values in these cases as zero, so we
-                # manually convert.
-                cpu_shares = data[u"Config"][u"CpuShares"]
-                cpu_shares = None if cpu_shares == 0 else cpu_shares
-                mem_limit = data[u"Config"][u"Memory"]
-                mem_limit = None if mem_limit == 0 else mem_limit
-                restart_policy = self._parse_restart_policy(
-                    data[U"HostConfig"][u"RestartPolicy"])
-                result.add(Unit(
-                    name=name,
-                    container_name=self._to_container_name(name),
-                    activation_state=state,
-                    container_image=image_tag,
-                    ports=frozenset(ports),
-                    volumes=frozenset(volumes),
-                    environment=unit_environment,
-                    mem_limit=mem_limit,
-                    cpu_shares=cpu_shares,
-                    restart_policy=restart_policy,
-                    command_line=command)
-                )
-            return result
-        return deferToThread(_list)
+                    raise
+
+            state = (u"active" if data[u"State"][u"Running"]
+                     else u"inactive")
+            name = data[u"Name"]
+            # Since tags (e.g. "busybox") aren't stable, ensure we're
+            # looking at the actual image by using the hash:
+            image = data[u"Image"]
+            image_tag = data[u"Config"][u"Image"]
+            command = data[u"Config"][u"Cmd"]
+#            with start_action(
+#                    action_type=u"flocker:node:docker:inspect_image",
+#                    container=i,
+#                    running=data[u"State"][u"Running"]
+#            ):
+            image_data = self._image_data(image)
+            if image_data.command == command:
+                command = None
+            port_bindings = data[u"NetworkSettings"][u"Ports"]
+            if port_bindings is not None:
+                ports = self._parse_container_ports(port_bindings)
+            else:
+                ports = list()
+            volumes = []
+            binds = data[u"HostConfig"]['Binds']
+            if binds is not None:
+                for bind_config in binds:
+                    parts = bind_config.split(':', 2)
+                    node_path, container_path = parts[:2]
+                    volumes.append(
+                        Volume(container_path=FilePath(container_path),
+                               node_path=FilePath(node_path))
+                    )
+            # if name.startswith(u"/" + self.namespace):
+            #name = name[1 + len(self.namespace):]
+            # else:
+            #     continue
+            # Retrieve environment variables for this container,
+            # disregarding any environment variables that are part
+            # of the image, rather than supplied in the configuration.
+            unit_environment = []
+            container_environment = data[u"Config"][u"Env"]
+            if image_data.environment is None:
+                image_environment = []
+            else:
+                image_environment = image_data.environment
+            if container_environment is not None:
+                for environment in container_environment:
+                    if environment not in image_environment:
+                        env_key, env_value = environment.split('=', 1)
+                        unit_environment.append((env_key, env_value))
+            unit_environment = (
+                Environment(variables=frozenset(unit_environment))
+                if unit_environment else None
+            )
+            # Our Unit model counts None as the value for cpu_shares and
+            # mem_limit in containers without specified limits, however
+            # Docker returns the values in these cases as zero, so we
+            # manually convert.
+            cpu_shares = data[u"Config"][u"CpuShares"]
+            cpu_shares = None if cpu_shares == 0 else cpu_shares
+            mem_limit = data[u"Config"][u"Memory"]
+            mem_limit = None if mem_limit == 0 else mem_limit
+            restart_policy = self._parse_restart_policy(
+                data[U"HostConfig"][u"RestartPolicy"])
+            result.add(Unit(
+                name=name,
+                container_name=self._to_container_name(name),
+                activation_state=state,
+                container_image=image_tag,
+                ports=frozenset(ports),
+                volumes=frozenset(volumes),
+                environment=unit_environment,
+                mem_limit=mem_limit,
+                cpu_shares=cpu_shares,
+                restart_policy=restart_policy,
+                command_line=command)
+            )
+        return result
 
 
 class NamespacedDockerClient(proxyForInterface(IDockerClient, "_client")):
