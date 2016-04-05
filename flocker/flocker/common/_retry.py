@@ -376,24 +376,13 @@ def _poll_until_success_returning_result(
     saved_result = [None]
 
     def pollable():
-        Message.new(
-            message_type=_TRY_RETRYING,
-        ).write()
         try:
             result = function(*args, **kwargs)
         except Exception as e:
             saved_result[0] = exc_info()
             should_retry(*saved_result[0])
-            Message.new(
-                message_type=_TRY_FAILURE,
-                exception=str(e),
-            ).write()
             return False
         else:
-            Message.new(
-                message_type=_TRY_SUCCESS,
-                result=result,
-            ).write()
             saved_result[0] = result
             return True
 
@@ -436,10 +425,7 @@ def with_retry(method, should_retry=None, steps=None, sleep=None):
         steps = get_default_retry_steps()
 
     def method_with_retry(*a, **kw):
-        name = _callable_repr(method)
-        action_type = _TRY_UNTIL_SUCCESS
-        with start_action(action_type=action_type, function=name):
-            return _poll_until_success_returning_result(
+        return _poll_until_success_returning_result(
                 should_retry, steps, sleep, method, a, kw
             )
     return method_with_retry

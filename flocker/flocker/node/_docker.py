@@ -646,14 +646,10 @@ class DockerClient(object):
         """
         cached_image = self._image_cache.get(image)
         if cached_image is not None:
-            LOG_CACHED_IMAGE(image=image).write()
+            #LOG_CACHED_IMAGE(image=image).write()
             return cached_image
         try:
             image_data = self._client.inspect_image(image)
-            Message.new(
-                message_type="flocker:node:docker:image_inspected",
-                image=image
-            ).write()
         except APIError as e:
             if e.response.status_code == NOT_FOUND:
                 # Image has been deleted, so just fill in some
@@ -661,10 +657,6 @@ class DockerClient(object):
                 # should happen only for stopped containers so
                 # some inaccuracy is acceptable.
                 # We won't cache stub data though.
-                Message.new(
-                    message_type="flocker:node:docker:image_not_found",
-                    image=image
-                ).write()
                 image_data = {u"Config": {u"Env": [], u"Cmd": []}}
             else:
                 raise
@@ -673,10 +665,6 @@ class DockerClient(object):
             environment=image_data[u"Config"][u"Env"]
         )
         self._image_cache.put(image, cached_data)
-        Message.new(
-            message_type="flocker:node:docker:image_data_cached",
-            image=image
-        ).write()
         return cached_data
 
     def add(self, unit_name, image_name, ports=None, environment=None,
@@ -918,11 +906,6 @@ class DockerClient(object):
             image = data[u"Image"]
             image_tag = data[u"Config"][u"Image"]
             command = data[u"Config"][u"Cmd"]
-#            with start_action(
-#                    action_type=u"flocker:node:docker:inspect_image",
-#                    container=i,
-#                    running=data[u"State"][u"Running"]
-#            ):
             image_data = self._image_data(image)
             if image_data.command == command:
                 command = None
@@ -941,10 +924,6 @@ class DockerClient(object):
                         Volume(container_path=FilePath(container_path),
                                node_path=FilePath(node_path))
                     )
-            # if name.startswith(u"/" + self.namespace):
-            #name = name[1 + len(self.namespace):]
-            # else:
-            #     continue
             # Retrieve environment variables for this container,
             # disregarding any environment variables that are part
             # of the image, rather than supplied in the configuration.
