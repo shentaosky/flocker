@@ -258,6 +258,8 @@ class P2PManifestationDeployer(object):
 
             # TODO: need to support multiple flocker-volume for each container
             for container in containers:
+                if container.activation_state != "active":
+                    continue
                 for volume in container.volumes:
                     if available_manifestations.has_key(volume.node_path):
                         dataset_id, _, _ = available_manifestations.get(volume.node_path)
