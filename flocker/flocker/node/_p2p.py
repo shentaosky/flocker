@@ -24,13 +24,13 @@ from . import IStateChange, in_parallel, sequentially
 
 from ..control._model import (
     DatasetChanges, DatasetHandoff, NodeState, Manifestation, Dataset,
-    ip_to_uuid,
-    )
+    ip_to_uuid, Application, AttachedVolume, DockerImage)
 from ..volume._ipc import RemoteVolumeManager, standard_node
 from ..volume._model import VolumeSize
 from ..volume.service import VolumeName
 
 from ._deploy import IDeployer, NodeLocalState, NotInUseDatasets
+from ._docker import DockerClient, Volume as DockerVolume
 
 _logger = Logger()
 
@@ -221,6 +221,7 @@ class P2PManifestationDeployer(object):
         self.node_uuid = node_uuid
         self.hostname = hostname
         self.volume_service = volume_service
+        self.docker_client = DockerClient()
 
     def discover_state(self, cluster_state):
         """
@@ -252,17 +253,49 @@ class P2PManifestationDeployer(object):
                 manifestations[dataset_id] = Manifestation(dataset=Dataset(dataset_id=dataset_id,
                                                                            maximum_size=maximum_size),
                                                            primary=primary)
+            containers = self.docker_client.list_sync()
+            applications = []
+
+            # TODO: need to support multiple flocker-volume for each container
+            for container in containers:
+                if container.activation_state != "active":
+                    continue
+                for volume in container.volumes:
+                    if available_manifestations.has_key(volume.node_path):
+                        dataset_id, _, _ = available_manifestations.get(volume.node_path)
+                        attached_volume = AttachedVolume(
+                            manifestation=manifestations.get(dataset_id),
+                            mountpoint=volume.container_path,
+                        )
+
+                        # leave some filed empty, since we not using them
+                        applications.append(Application(
+                            name=container.name,
+                            image=DockerImage.from_string(container.container_image),
+                            ports=frozenset(),
+                            volume=attached_volume,
+                            environment=None,
+                            links=frozenset(),
+                            memory_limit=container.mem_limit,
+                            cpu_shares=container.cpu_shares,
+                            restart_policy=container.restart_policy,
+                            running=(container.activation_state == u"active"),
+                            command_line=container.command_line,
+                        )
+                        )
+
             return NodeLocalState(
                 node_state=NodeState(
                     uuid=self.node_uuid,
                     hostname=self.hostname,
-                    applications=None,
+                    applications=applications,
                     manifestations=manifestations,
                     paths=manifestation_paths,
                     devices={},
                 )
             )
         volumes.addCallback(got_volumes)
+
         return volumes
 
     def calculate_changes(self, configuration, cluster_state, local_state):
@@ -280,6 +313,8 @@ class P2PManifestationDeployer(object):
         # deletion or handoffs. Eventually this will rely on leases instead.
         if local_state_primary.applications is None:
             return sequentially(changes=[])
+
+        print b"local_state_primary.applications %s " % local_state_primary.applications
         phases = []
 
         not_in_use_datasets = NotInUseDatasets(

@@ -459,13 +459,13 @@ class ConvergenceLoop(object):
             return succeed(None)
 
     def output_CONVERGE(self, context):
-        with LOG_CONVERGE(self.fsm.logger, cluster_state=self.cluster_state,
-                          desired_configuration=self.configuration).context():
-            with LOG_DISCOVERY(self.fsm.logger).context():
-                discover = DeferredContext(maybeDeferred(
-                    self.deployer.discover_state, self.cluster_state))
-                discover.addActionFinish()
-            d = DeferredContext(discover.result)
+        #with LOG_CONVERGE(self.fsm.logger, cluster_state=self.cluster_state,
+        #                  desired_configuration=self.configuration).context():
+        with LOG_DISCOVERY(self.fsm.logger).context():
+            discover = DeferredContext(maybeDeferred(
+                self.deployer.discover_state, self.cluster_state))
+            discover.addActionFinish()
+        d = DeferredContext(discover.result)
 
         def get_primary_manifestions(local_state):
             node_state = local_state.node_state
