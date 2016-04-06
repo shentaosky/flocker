@@ -211,7 +211,7 @@ class P2PManifestationDeployer(object):
     :ivar unicode hostname: The hostname of the node that this is running on.
     :ivar VolumeService volume_service: The volume manager for this node.
     """
-    def __init__(self, hostname, volume_service, node_uuid=None):
+    def __init__(self, hostname, volume_service, node_uuid=None, docker_client=None):
         if node_uuid is None:
             # To be removed in https://clusterhq.atlassian.net/browse/FLOC-1795
             warn("UUID is required, this is for backwards compat with existing"
@@ -221,7 +221,10 @@ class P2PManifestationDeployer(object):
         self.node_uuid = node_uuid
         self.hostname = hostname
         self.volume_service = volume_service
-        self.docker_client = DockerClient()
+        if docker_client is None:
+            self.docker_client = DockerClient()
+        else:
+            self.docker_client = docker_client
 
     def discover_state(self, cluster_state):
         """
