@@ -11,7 +11,7 @@ from zope.interface.verify import verifyObject
 from twisted.internet.task import Clock
 from twisted.python.filepath import FilePath
 
-from ..service import VolumeService, Volume, DEFAULT_CONFIG_PATH, VolumeName
+from ..service import VolumeService, Volume, VolumeName
 from ..filesystems.zfs import Snapshot
 from ..filesystems.memory import FilesystemStoragePool
 from .._ipc import (
@@ -19,6 +19,7 @@ from .._ipc import (
     standard_node, SSH_PRIVATE_KEY_PATH)
 from ..testtools import ServicePair
 from ...common import FakeNode
+from ...common._node_config import DEFAULT_CONFIG_PATH
 from ...common._ipc import ProcessNode
 from ...testtools import AsyncTestCase, TestCase
 
@@ -322,7 +323,7 @@ class RemoteVolumeManagerTests(TestCase):
         self.assertEqual(node.remote_command,
                          [b"flocker-volume", b"--config", b"/path/to/json",
                           b"snapshots", self.volume.node_id.encode("ascii"),
-                          b"myns.myvol"])
+                          b"myns.myvol", b"bronze"])
         self.assertEqual(
             [Snapshot(name="abc"), Snapshot(name="def")], snapshots)
 
@@ -338,7 +339,7 @@ class RemoteVolumeManagerTests(TestCase):
         self.assertEqual(node.remote_command,
                          [b"flocker-volume", b"--config", b"/path/to/json",
                           b"receive", self.volume.node_id.encode("ascii"),
-                          b"myns.myvol"])
+                          b"myns.myvol", b"bronze"])
 
     def test_receive_default_config(self):
         """
@@ -354,7 +355,7 @@ class RemoteVolumeManagerTests(TestCase):
                          [b"flocker-volume", b"--config",
                           DEFAULT_CONFIG_PATH.path,
                           b"receive", self.volume.node_id.encode("ascii"),
-                          b"myns.myvol"])
+                          b"myns.myvol", b"bronze"])
 
     def test_acquire_destination_run(self):
         """
@@ -369,7 +370,7 @@ class RemoteVolumeManagerTests(TestCase):
         self.assertEqual(node.remote_command,
                          [b"flocker-volume", b"--config", b"/path/to/json",
                           b"acquire", self.volume.node_id.encode("ascii"),
-                          b"myns.myvol"])
+                          b"myns.myvol", b"bronze"])
 
 
 class StandardNodeTests(TestCase):
@@ -383,4 +384,4 @@ class StandardNodeTests(TestCase):
         """
         node = standard_node(b'example.com')
         self.assertEqual(node, ProcessNode.using_ssh(
-            b'example.com', 22, b'root', SSH_PRIVATE_KEY_PATH))
+            b'example.com', 2022, b'root', SSH_PRIVATE_KEY_PATH))

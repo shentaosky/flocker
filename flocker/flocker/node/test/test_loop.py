@@ -14,6 +14,7 @@ from eliot.testing import (
 from machinist import LOG_FSM_TRANSITION
 
 from pyrsistent import pset
+from twisted.python.filepath import FilePath
 
 from twisted.test.proto_helpers import MemoryReactorClock
 from twisted.internet.protocol import ReconnectingClientFactory
@@ -566,7 +567,7 @@ class ConvergenceLoopFSMTests(TestCase):
             hostname=local_node_hostname,
             manifestations={discovered_manifestation.dataset_id:
                             discovered_manifestation},
-            devices={}, paths={},
+            devices={}, paths={discovered_manifestation.dataset_id: FilePath(b"/tmp/%s" % discovered_manifestation.dataset_id)},
         )
         client = self.make_amp_client([local_node_state])
         action = ControllableAction(result=Deferred())

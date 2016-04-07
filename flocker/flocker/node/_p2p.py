@@ -260,7 +260,6 @@ class P2PManifestationDeployer(object):
             containers = self.docker_client.list_sync()
             applications = []
 
-            # TODO: need to support multiple flocker-volume for each container
             for container in containers:
                 if container.activation_state != "active":
                     continue

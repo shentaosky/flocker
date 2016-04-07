@@ -55,9 +55,9 @@ TEST_DEPLOYMENT = Deployment(
                     Application(
                         name=u'myapp',
                         image=DockerImage.from_string(u'postgresql:7.6'),
-                        volume=AttachedVolume(
+                        volumes=[AttachedVolume(
                             manifestation=MANIFESTATION,
-                            mountpoint=FilePath(b"/xxx/yyy"))
+                            mountpoint=FilePath(b"/xxx/yyy"))]
                     )],
                 manifestations={DATASET.dataset_id: MANIFESTATION})])
 
@@ -596,7 +596,7 @@ APPLICATIONS = st.builds(
     # systems.
     ports=st.sets(PORTS, max_size=10),
     links=st.sets(LINKS, max_size=10),
-    volume=st.none() | VOLUMES,
+    volumes=st.sets(VOLUMES, max_size=10),
     environment=st.dictionaries(keys=st.text(), values=st.text()),
     memory_limit=NONE_OR_INT,
     cpu_shares=NONE_OR_INT,
@@ -607,13 +607,15 @@ APPLICATIONS = st.builds(
 def _build_node(applications):
     # All the manifestations in `applications`.
     app_manifestations = set(
-        app.volume.manifestation for app in applications if app.volume
+        volume.manifestation for app in applications
+            for volume in app.volumes
     )
     # A set that contains all of those, plus an arbitrary set of
     # manifestations.
     dataset_ids = frozenset(
-        app.volume.manifestation.dataset_id
-        for app in applications if app.volume
+        volume.manifestation.dataset_id
+        for app in applications
+            for volume in app.volumes
     )
     manifestations = (
         st.sets(MANIFESTATIONS.filter(
@@ -626,14 +628,21 @@ def _build_node(applications):
         applications=st.just(applications),
         manifestations=manifestations)
 
+def validate_app(app):
+    if not app.volumes:
+        return app
+    else:
+        for volume in app.volumes:
+            if volume.manifestation.dataset_id:
+                return app
+    return None
 
 NODES = st.lists(
     APPLICATIONS,
     # If we add this hint on the number of applications, Hypothesis is able to
     # run many more tests.
     average_size=3,
-    unique_by=lambda app:
-    app if not app.volume else app.volume.manifestation.dataset_id).map(
+    unique_by=validate_app).map(
         pset).flatmap(_build_node)
 
 

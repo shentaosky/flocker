@@ -140,7 +140,7 @@ def create_application(name, image, ports=frozenset(), volume=None,
     """
     return Application(
         name=name, image=DockerImage.from_string(image + u':latest'),
-        ports=ports, volume=volume, links=links, environment=environment,
+        ports=ports, volumes=(volume,), links=links, environment=environment,
         memory_limit=memory_limit, cpu_shares=cpu_shares
     )
 

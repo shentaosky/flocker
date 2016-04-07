@@ -25,7 +25,7 @@ from ...testtools import (
 
 from ..filesystems.zfs import (
     _DatasetInfo,
-    zfs_command, CommandFailed, BadArguments, Filesystem, ZFSSnapshots,
+    zfs_command, CommandFailed, Filesystem, ZFSSnapshots,
     _sync_command_error_squashed, _latest_common_snapshot, ZFS_ERROR,
     Snapshot,
 )
@@ -177,7 +177,7 @@ class ZFSCommandTests(TestCase):
         result = zfs_command(reactor, [b"-H", b"lalala"])
         process_protocol = reactor.processes[0].processProtocol
         process_protocol.processEnded(Failure(ProcessTerminated(2)))
-        self.failureResultOf(result, BadArguments)
+        self.failureResultOf(result, CommandFailed)
 
     def test_other_exit(self):
         """
@@ -188,9 +188,9 @@ class ZFSCommandTests(TestCase):
         reactor = FakeProcessReactor()
         result = zfs_command(reactor, [b"-H", b"lalala"])
         process_protocol = reactor.processes[0].processProtocol
-        exception = ProcessTerminated(99)
+        exception = CommandFailed()
         process_protocol.processEnded(Failure(exception))
-        self.assertEqual(self.failureResultOf(result).value, exception)
+        self.failureResultOf(result, CommandFailed)
 
 
 def no_such_executable_logged(case, logger):

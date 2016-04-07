@@ -32,13 +32,32 @@
                     "running": [
                         "__builtin__.bool"
                     ],
-                    "volume": []
+                    "volumes": [
+                        "flocker.control._model.AttachedvolumePSet"
+                    ]
                 }
             },
             "flocker.control._model.ApplicationPSet": {
                 "category": "set",
                 "type": [
                     "flocker.control._model.Application"
+                ]
+            },
+            "flocker.control._model.AttachedVolume": {
+                "category": "record",
+                "fields": {
+                    "manifestation": [
+                        "flocker.control._model.Manifestation"
+                    ],
+                    "mountpoint": [
+                        "twisted.python.filepath.FilePath"
+                    ]
+                }
+            },
+            "flocker.control._model.AttachedvolumePSet": {
+                "category": "set",
+                "type": [
+                    "flocker.control._model.AttachedVolume"
                 ]
             },
             "flocker.control._model.Dataset": {
@@ -184,9 +203,10 @@
                 ]
             },
             "pyrsistent._pmap.PMap": null,
+            "twisted.python.filepath.FilePath": null,
             "uuid.UUID": null
         },
         "root": "flocker.control._model.Deployment"
     },
-    "version": "1.2.0+60.g7e31395.dirty"
+    "version": "0+unknown"
 }

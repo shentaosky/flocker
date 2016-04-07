@@ -988,8 +988,14 @@ class CreateContainerTestsMixin(APITestsMixin):
 
         def check_config(_):
             config = self.persistence_service.get()
+            volumes = []
+            for application in config.applications():
+                for volume in application.volumes:
+                    volumes.append(volume)
             self.assertEqual(
-                list(config.applications())[0].volume,
+                len(volumes), 1)
+            self.assertEqual(
+                volumes[0],
                 AttachedVolume(
                     manifestation=Manifestation(
                         dataset=Dataset(dataset_id=dataset_id),
@@ -1219,10 +1225,10 @@ class GetContainerConfigurationTestsMixin(APITestsMixin):
         application = Application(
             name='postgres',
             image=DockerImage.from_string('postgres'),
-            volume=AttachedVolume(
+            volumes=[AttachedVolume(
                 manifestation=manifestation,
                 mountpoint=FilePath(b"/var/lib/postgresql/9.4/data/base")
-            )
+            )]
         )
         deployment = Deployment(
             nodes={
@@ -1365,10 +1371,10 @@ class UpdateContainerConfigurationTestsMixin(APITestsMixin):
         application = Application(
             name=u'postgres',
             image=DockerImage.from_string(u'postgres'),
-            volume=AttachedVolume(
+            volumes=[AttachedVolume(
                 manifestation=manifestation,
                 mountpoint=FilePath(b"/var/lib/postgresql/9.4/data/base")
-            )
+            )]
         )
 
         deployment = Deployment(
@@ -2816,10 +2822,10 @@ class DatasetsFromDeploymentTests(TestCase):
         """
         expected_uuid = uuid4()
         expected_dataset = Dataset(dataset_id=u"jalkjlk")
-        volume = AttachedVolume(
+        volumes = [AttachedVolume(
             manifestation=Manifestation(dataset=expected_dataset,
                                         primary=True),
-            mountpoint=FilePath(b"/blah"))
+            mountpoint=FilePath(b"/blah"))]
 
         node = Node(
             uuid=expected_uuid,
@@ -2829,9 +2835,9 @@ class DatasetsFromDeploymentTests(TestCase):
                     image=DockerImage.from_string(u"xxx")),
                 Application(name=u'site-clusterhq.com',
                             image=DockerImage.from_string(u"xxx"),
-                            volume=volume)},
+                            volumes=volumes)},
             manifestations={expected_dataset.dataset_id:
-                            volume.manifestation},
+                            volumes[0].manifestation},
         )
 
         deployment = Deployment(nodes=frozenset([node]))
@@ -2877,10 +2883,10 @@ class DatasetsFromDeploymentTests(TestCase):
         """
         expected_uuid = uuid4()
         expected_dataset = Dataset(dataset_id=u"jalkjlk")
-        volume = AttachedVolume(
+        volumes = [AttachedVolume(
             manifestation=Manifestation(dataset=expected_dataset,
                                         primary=True),
-            mountpoint=FilePath(b"/blah"))
+            mountpoint=FilePath(b"/blah"))]
 
         node1 = Node(
             uuid=expected_uuid,
@@ -2890,8 +2896,8 @@ class DatasetsFromDeploymentTests(TestCase):
                     image=DockerImage.from_string("mysql")),
                 Application(name=u'site-clusterhq.com',
                             image=DockerImage.from_string("site"),
-                            volume=volume)}),
-            manifestations={expected_dataset.dataset_id: volume.manifestation},
+                            volumes=volumes)}),
+            manifestations={expected_dataset.dataset_id: volumes[0].manifestation},
         )
         expected_manifestation = Manifestation(dataset=expected_dataset,
                                                primary=False)
@@ -3082,8 +3088,8 @@ class ContainerStateTestsMixin(APITestsMixin):
             ports=[Port(internal_port=80, external_port=8080)],
             links=[Link(alias=u"db", local_port=1234, remote_port=5678)],
             cpu_shares=512, memory_limit=1024*1024*100,
-            volume=AttachedVolume(manifestation=manifestation,
-                                  mountpoint=FilePath(b"/xxx/yyy")),
+            volumes=[AttachedVolume(manifestation=manifestation,
+                                  mountpoint=FilePath(b"/xxx/yyy"))],
             restart_policy=RestartAlways(),
         )
         expected_hostname = u"192.0.2.101"
@@ -3131,8 +3137,8 @@ class ContainerStateTestsMixin(APITestsMixin):
         )
         expected_application = Application(
             name=u"myapp", image=DockerImage.from_string(u"busybox:1.2"),
-            volume=AttachedVolume(manifestation=manifestation,
-                                  mountpoint=FilePath(b"/xxx/yyy")),
+            volumes=[AttachedVolume(manifestation=manifestation,
+                                  mountpoint=FilePath(b"/xxx/yyy"))],
         )
         expected_hostname = u"192.0.2.101"
         expected_uuid = uuid4()

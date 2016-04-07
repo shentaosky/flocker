@@ -229,8 +229,6 @@ class Filesystem(object):
             from twisted.internet import reactor
         self._reactor = reactor
 
-        self._node_id, self._dataset_id = self.get_nodeid_datasetid()
-
     def _exists(self):
         """
         Determine whether this filesystem exists locally.
