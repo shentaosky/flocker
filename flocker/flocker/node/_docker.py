@@ -369,6 +369,9 @@ class FakeDockerClient(object):
         units = set(self._units.values())
         return succeed(units)
 
+    def list_sync(self):
+        return set(self._units.values())
+
 
 # Basic namespace for Flocker containers:
 BASE_NAMESPACE = u"flocker--"
