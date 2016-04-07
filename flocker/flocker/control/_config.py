@@ -207,9 +207,9 @@ class ApplicationMarshaller(object):
         environment = self.convert_environment()
         if environment:
             config['environment'] = environment
-        volume = self.convert_volume()
-        if volume:
-            config['volume'] = volume
+        volumes = self.convert_volumes()
+        if volumes:
+            config['volumes'] = volumes
         config['restart_policy'] = self.convert_restart_policy()
         return config
 
@@ -284,26 +284,27 @@ class ApplicationMarshaller(object):
             return sorted(links)
         return None
 
-    def convert_volume(self):
+    def convert_volumes(self):
         """
-        Parse an ``Application`` instance for its volume and return
+        Parse an ``Application`` instance for its volumes and return
         a ``dict`` representing the Flocker-format YAML configuration
-        for the volume, or ``None`` if no volume is set for the application.
+        for the volumes, or ``None`` if no volume is set for the application.
 
-        NOTE: We only support one volume per conainer for now, this
-        logic will need refactoring in future if this changes.
         """
-        if self._application.volume:
-            volume_dict = {
-                u'mountpoint': self._application.volume.mountpoint.path
-            }
-            dataset = self._application.volume.dataset
-            volume_dict[u'dataset_id'] = dataset.dataset_id
-            if dataset.maximum_size is not None:
-                volume_dict[u'maximum_size'] = (
-                    unicode(dataset.maximum_size)
-                )
-            return volume_dict
+        if self._application.volumes:
+            volumes = []
+            for volume in self._application.volumes:
+                volume_dict = {
+                    u'mountpoint': volume.mountpoint.path
+                }
+                dataset = volume.dataset
+                volume_dict[u'dataset_id'] = dataset.dataset_id
+                if dataset.maximum_size is not None:
+                    volume_dict[u'maximum_size'] = (
+                        unicode(dataset.maximum_size)
+                    )
+                volumes.append(volume_dict)
+            return volumes
         return None
 
 
@@ -533,6 +534,7 @@ class FigConfiguration(object):
         _check_type(volumes, list,
                     "'volumes' must be a list",
                     application)
+        attached_volumes = []
         for volume in volumes:
             if not isinstance(volume, (str, unicode,)):
                 raise ConfigurationError(
@@ -542,21 +544,14 @@ class FigConfiguration(object):
                          application=application,
                          type=type(volume).__name__)
                 )
-        if len(volumes) > 1:
-            raise ConfigurationError(
-                ("Application '{application}' has a config "
-                 "error. Only one volume per application is "
-                 "supported at this time.").format(
-                     application=application)
-            )
-        volume = AttachedVolume(
-            manifestation=Manifestation(
-                dataset=Dataset(dataset_id=dataset_id_from_name(application),
-                                metadata=pmap({"name": application})),
-                primary=True),
-            mountpoint=FilePath(volumes[0])
-        )
-        return volume
+            attached_volumes.append(AttachedVolume(
+                manifestation=Manifestation(
+                    dataset=Dataset(dataset_id=dataset_id_from_name(application),
+                                    metadata=pmap({"name": application})),
+                    primary=True),
+                mountpoint=FilePath(volumes[0])
+            ))
+        return attached_volumes
 
     def _parse_app_ports(self, application, ports):
         """
@@ -728,7 +723,7 @@ class FigConfiguration(object):
                 image = DockerImage.from_string(image_name)
                 environment = None
                 ports = []
-                volume = None
+                volumes = []
                 mem_limit = None
                 self._application_links[application_name] = []
                 if 'environment' in config:
@@ -737,7 +732,7 @@ class FigConfiguration(object):
                         config['environment']
                     )
                 if 'volumes' in config:
-                    volume = self._parse_app_volumes(
+                    volumes = self._parse_app_volumes(
                         application_name,
                         config['volumes']
                     )
@@ -758,7 +753,7 @@ class FigConfiguration(object):
                 self._applications[application_name] = Application(
                     name=application_name,
                     image=image,
-                    volume=volume,
+                    volumes=volumes,
                     ports=frozenset(ports),
                     links=frozenset(),
                     environment=environment,
@@ -845,7 +840,7 @@ class FlockerConfiguration(object):
         self._application_configuration = application_configuration
         self._allowed_keys = {
             "image", "environment", "ports",
-            "links", "volume", "mem_limit", "cpu_shares",
+            "links", "volumes", "mem_limit", "cpu_shares",
             "restart_policy",
         }
         self._applications = {}
@@ -1042,84 +1037,86 @@ class FlockerConfiguration(object):
 
         return frozenset(links)
 
-    def _parse_volume(self, configured_volume, application_name):
+    def _parse_volumes(self, configured_volumes, application_name):
         """
-        Validate and parse the volume portion of a Flocker configuration.
+        Validate and parse the volumes portion of a Flocker configuration.
 
-        :param dict configured_volume: The 'volume' portion of the parsed
+        :param dict configured_volumes: The 'volumes' portion of the parsed
             application config.
 
         :param unicode application_name: The name of the current application.
 
-        :returns ``AttachedVolume`` instance representing the parsed volume.
+        :returns ``AttachedVolumes`` instance representing the parsed volumes.
 
         :raises: ValueError on any parsing error.
         """
-        try:
-            maximum_size = configured_volume.pop('maximum_size')
-        except KeyError:
-            maximum_size = None
-        except AttributeError:
-            raise ValueError(
-                "Unexpected value: " + str(configured_volume)
-            )
-        else:
+        volumes = []
+        for configured_volume in configured_volumes:
             try:
-                maximum_size = parse_storage_string(maximum_size)
-                if maximum_size < 1:
-                    raise ValueError("Must be greater than zero.")
-            except ValueError as e:
-                raise ValueError('maximum_size: {msg}'.format(msg=e.message))
-        try:
-            mountpoint = configured_volume['mountpoint']
-        except KeyError:
-            raise ValueError("Missing mountpoint.")
-
-        if not isinstance(mountpoint, (str, unicode)):
-            raise ValueError("Mountpoint \"{path}\" is not a string.".format(
-                path=mountpoint))
-
-        try:
-            mountpoint.decode("ascii")
-        except UnicodeError:
-            raise ValueError(
-                "Mountpoint \"{path}\" contains non-ASCII "
-                "(unsupported).".format(
-                    path=mountpoint
+                maximum_size = configured_volume.pop('maximum_size')
+            except KeyError:
+                maximum_size = None
+            except AttributeError:
+                raise ValueError(
+                    "Unexpected value: " + str(configured_volume)
                 )
-            )
-        if not os.path.isabs(mountpoint):
-            raise ValueError(
-                "Mountpoint \"{path}\" is not an absolute path."
-                .format(
-                    path=mountpoint
+            else:
+                try:
+                    maximum_size = parse_storage_string(maximum_size)
+                    if maximum_size < 1:
+                        raise ValueError("Must be greater than zero.")
+                except ValueError as e:
+                    raise ValueError('maximum_size: {msg}'.format(msg=e.message))
+            try:
+                mountpoint = configured_volume['mountpoint']
+            except KeyError:
+                raise ValueError("Missing mountpoint.")
+
+            if not isinstance(mountpoint, (str, unicode)):
+                raise ValueError("Mountpoint \"{path}\" is not a string.".format(
+                    path=mountpoint))
+
+            try:
+                mountpoint.decode("ascii")
+            except UnicodeError:
+                raise ValueError(
+                    "Mountpoint \"{path}\" contains non-ASCII "
+                    "(unsupported).".format(
+                        path=mountpoint
+                    )
                 )
-            )
-        configured_volume.pop('mountpoint')
+            if not os.path.isabs(mountpoint):
+                raise ValueError(
+                    "Mountpoint \"{path}\" is not an absolute path."
+                    .format(
+                        path=mountpoint
+                    )
+                )
+            configured_volume.pop('mountpoint')
 
-        if 'dataset_id' in configured_volume:
-            dataset_id = configured_volume.pop('dataset_id')
-        else:
-            dataset_id = dataset_id_from_name(application_name)
+            if 'dataset_id' in configured_volume:
+                dataset_id = configured_volume.pop('dataset_id')
+            else:
+                dataset_id = dataset_id_from_name(application_name)
 
-        if configured_volume:
-            raise ValueError(
-                "Unrecognised keys: {keys}.".format(
-                    keys=', '.join(sorted(
-                        configured_volume.keys()))
+            if configured_volume:
+                raise ValueError(
+                    "Unrecognised keys: {keys}.".format(
+                        keys=', '.join(sorted(
+                            configured_volume.keys()))
+                    ))
+            mountpoint = FilePath(mountpoint)
+
+            volumes.append(AttachedVolume(
+                manifestation=Manifestation(
+                    dataset=Dataset(dataset_id=dataset_id,
+                                    metadata=pmap({"name": application_name}),
+                                    maximum_size=maximum_size),
+                    primary=True),
+                mountpoint=mountpoint,
                 ))
-        mountpoint = FilePath(mountpoint)
 
-        volume = AttachedVolume(
-            manifestation=Manifestation(
-                dataset=Dataset(dataset_id=dataset_id,
-                                metadata=pmap({"name": application_name}),
-                                maximum_size=maximum_size),
-                primary=True),
-            mountpoint=mountpoint,
-            )
-
-        return volume
+        return volumes
 
     def _parse(self):
         """
@@ -1170,16 +1167,16 @@ class FlockerConfiguration(object):
             links = self._parse_link_configuration(
                 application_name, config.pop('links', []))
 
-            volume = None
-            if "volume" in config:
+            volumes = []
+            if "volumes" in config:
                 try:
-                    configured_volume = config.pop('volume')
-                    volume = self._parse_volume(configured_volume,
+                    configured_volumes = config.pop('volumes')
+                    volumes = self._parse_volumes(configured_volumes,
                                                 application_name)
                 except ValueError as e:
                     raise ConfigurationError(
                         ("Application '{application_name}' has a config "
-                         "error. Invalid volume specification. {message}")
+                         "error. Invalid volumes specification. {message}")
                         .format(
                             application_name=application_name,
                             message=e.message
@@ -1208,7 +1205,7 @@ class FlockerConfiguration(object):
             attributes = dict(
                 name=application_name,
                 image=image,
-                volume=volume,
+                volumes=volumes,
                 ports=frozenset(ports),
                 links=links,
                 environment=environment,
@@ -1297,10 +1294,11 @@ def deployment_from_configuration(deployment_state, deployment_configuration,
                 hostname))
         node = Node(uuid=node_states[hostname].uuid,
                     applications=frozenset(node_applications),
-                    manifestations={app.volume.manifestation.dataset_id:
-                                    app.volume.manifestation
+                    manifestations={volume.manifestation.dataset_id:
+                                    volume.manifestation
                                     for app in node_applications
-                                    if app.volume is not None})
+                                    for volume in app.volumes
+                                    if app.volumes is not None})
         nodes.append(node)
     return set(nodes)
 

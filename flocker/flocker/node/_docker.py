@@ -373,7 +373,6 @@ class FakeDockerClient(object):
 # Basic namespace for Flocker containers:
 BASE_NAMESPACE = u"flocker--"
 
-
 class TimeoutClient(Client):
     """
     A subclass of docker.Client that sets any infinite timeouts to the
@@ -924,6 +923,10 @@ class DockerClient(object):
                         Volume(container_path=FilePath(container_path),
                                node_path=FilePath(node_path))
                     )
+            if name.startswith(u"/" + self.namespace):
+                name = name[1 + len(self.namespace):]
+            else:
+                continue
             # Retrieve environment variables for this container,
             # disregarding any environment variables that are part
             # of the image, rather than supplied in the configuration.

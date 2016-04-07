@@ -221,8 +221,9 @@ class P2PManifestationDeployer(object):
         self.node_uuid = node_uuid
         self.hostname = hostname
         self.volume_service = volume_service
+        # interact with all containers
         if docker_client is None:
-            self.docker_client = DockerClient()
+            self.docker_client = DockerClient(namespace=b'')
         else:
             self.docker_client = docker_client
 
@@ -263,29 +264,31 @@ class P2PManifestationDeployer(object):
             for container in containers:
                 if container.activation_state != "active":
                     continue
+                volumes = []
                 for volume in container.volumes:
                     if available_manifestations.has_key(volume.node_path):
                         dataset_id, _, _ = available_manifestations.get(volume.node_path)
-                        attached_volume = AttachedVolume(
+                        volumes.append(AttachedVolume(
                             manifestation=manifestations.get(dataset_id),
                             mountpoint=volume.container_path,
                         )
+                        )
 
                         # leave some filed empty, since we not using them
-                        applications.append(Application(
-                            name=container.name,
-                            image=DockerImage.from_string(container.container_image),
-                            ports=frozenset(),
-                            volume=attached_volume,
-                            environment=None,
-                            links=frozenset(),
-                            memory_limit=container.mem_limit,
-                            cpu_shares=container.cpu_shares,
-                            restart_policy=container.restart_policy,
-                            running=(container.activation_state == u"active"),
-                            command_line=container.command_line,
-                        )
-                        )
+                applications.append(Application(
+                    name=container.name,
+                    image=DockerImage.from_string(container.container_image),
+                    ports=frozenset(),
+                    volumes=volumes,
+                    environment=None,
+                    links=frozenset(),
+                    memory_limit=container.mem_limit,
+                    cpu_shares=container.cpu_shares,
+                    restart_policy=container.restart_policy,
+                    running=(container.activation_state == u"active"),
+                    command_line=container.command_line,
+                )
+                )
 
             return NodeLocalState(
                 node_state=NodeState(
@@ -317,7 +320,6 @@ class P2PManifestationDeployer(object):
         if local_state_primary.applications is None:
             return sequentially(changes=[])
 
-        print b"local_state_primary.applications %s " % local_state_primary.applications
         phases = []
 
         not_in_use_datasets = NotInUseDatasets(

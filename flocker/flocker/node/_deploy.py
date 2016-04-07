@@ -133,9 +133,9 @@ class NotInUseDatasets(object):
         :param Leases leases: The current leases on datasets.
         """
         self._node_id = node_uuid
-        self._in_use_datasets = {app.volume.manifestation.dataset_id
+        self._in_use_datasets = {volume.manifestation.dataset_id
                                  for app in local_applications
-                                 if app.volume is not None}
+                                 for volume in app.volumes}
         self._leases = leases
 
     def __call__(self, objects,
