@@ -582,9 +582,9 @@ class ConfigurationAPIUserV1(object):
             raise DATASET_NOT_FOUND
         if not any(n for (_, n) in instances if n.uuid == node_uuid):
             raise DATASET_ON_DIFFERENT_NODE
-        if any(app for app in deployment.applications() if
-                app.volume and
-                app.volume.manifestation.dataset_id == volume[u"dataset_id"]):
+        if any(app for app in deployment.applications()
+                       for app_volume in app.volumes
+                           if app_volume.manifestation.dataset_id == volume[u"dataset_id"]):
             raise DATASET_IN_USE
 
         return AttachedVolume(
@@ -684,11 +684,10 @@ class ConfigurationAPIUserV1(object):
                 if application.name == name:
                     raise CONTAINER_NAME_COLLISION
 
-        # Find the volume, if any; currently we only support one volume
-        # https://clusterhq.atlassian.net/browse/FLOC-49
-        attached_volume = None
+        attached_volumes = []
         if volumes:
             attached_volume = self._get_attached_volume(node_uuid, volumes[0])
+            attached_volumes = [attached_volume]
 
         # Find the node.
         node = deployment.get_node(node_uuid)
@@ -746,7 +745,7 @@ class ConfigurationAPIUserV1(object):
             image=DockerImage.from_string(image),
             ports=frozenset(application_ports),
             environment=environment,
-            volume=attached_volume,
+            volumes=attached_volumes,
             restart_policy=policy,
             cpu_shares=cpu_shares,
             memory_limit=memory_limit,
@@ -1257,11 +1256,12 @@ def container_configuration_response(application, node):
     }
     result.update(ApplicationMarshaller(application).convert())
     # Configuration format isn't quite the same as JSON format:
-    if u"volume" in result:
+    if u"volumes" in result:
         # Config format includes maximum_size, which we don't want:
-        volume = result.pop(u"volume")
-        result[u"volumes"] = [{u"dataset_id": volume[u"dataset_id"],
-                               u"mountpoint": volume[u"mountpoint"]}]
+        volumes = result.pop(u"volumes")
+        for volume in volumes:
+            result[u"volumes"] = [{u"dataset_id": volume[u"dataset_id"],
+                                   u"mountpoint": volume[u"mountpoint"]}]
     if application.cpu_shares is not None:
         result["cpu_shares"] = application.cpu_shares
     if application.memory_limit is not None:

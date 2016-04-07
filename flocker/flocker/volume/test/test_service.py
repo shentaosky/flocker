@@ -493,7 +493,7 @@ class VolumeServiceAPITests(AsyncTestCase):
         service.startService()
 
         self.assertRaises(ValueError, service.receive,
-                          service.node_id.encode("ascii"), b"lalala", None)
+                          service.node_id.encode("ascii"), b"lalala", b"bronze", None)
 
     def test_receive_creates_volume(self):
         """Receiving creates a volume with the given node_id and name."""
@@ -507,7 +507,7 @@ class VolumeServiceAPITests(AsyncTestCase):
         new_name = VolumeName(namespace=u"myns", dataset_id=u"newvolume")
 
         with filesystem.reader() as reader:
-            service.receive(manager_node_id, new_name, reader)
+            service.receive(manager_node_id, new_name, "bronze", reader)
         new_volume = Volume(node_id=manager_node_id, name=new_name,
                             service=service)
         d = service.enumerate()
@@ -533,7 +533,7 @@ class VolumeServiceAPITests(AsyncTestCase):
         new_name = VolumeName(namespace=u"myns", dataset_id=u"newvolume")
 
         with filesystem.reader() as reader:
-            service.receive(manager_node_id, new_name, reader)
+            service.receive(manager_node_id, new_name, "bronze", reader)
 
         new_volume = Volume(node_id=manager_node_id, name=new_name,
                             service=service)
@@ -636,7 +636,7 @@ class VolumeServiceAPITests(AsyncTestCase):
         service.startService()
         self.addCleanup(service.stopService)
 
-        self.failureResultOf(service.acquire(service.node_id, u"blah"),
+        self.failureResultOf(service.acquire(service.node_id, u"blah", "bronze"),
                              ValueError)
 
     # Further tests for acquire() are done in

@@ -132,7 +132,7 @@ class ApplicationInitTests(make_with_init_tests(
     record_type=Application,
     kwargs=dict(
         name=u'site-example.com', image=DockerImage.from_string(u"image"),
-        ports=pset(), volume=None, environment=pmap({}),
+        ports=pset(), volumes=pset(), environment=pmap({}),
         links=pset(), restart_policy=RestartAlways(),
     ),
     expected_defaults={'links': pset(), 'restart_policy': RestartNever()},
@@ -205,9 +205,9 @@ class NodeTests(TestCase):
                 APP1,
                 Application(name=u'a',
                             image=DockerImage.from_string(u'x'),
-                            volume=AttachedVolume(
+                            volumes=[AttachedVolume(
                                 manifestation=m1,
-                                mountpoint=FilePath(b"/xxx"))),
+                                mountpoint=FilePath(b"/xxx"))]),
             ])
 
     def test_manifestations_non_applications(self):
@@ -223,9 +223,9 @@ class NodeTests(TestCase):
                     applications=frozenset([
                         Application(name=u'a',
                                     image=DockerImage.from_string(u'x'),
-                                    volume=AttachedVolume(
+                                    volumes=[AttachedVolume(
                                         manifestation=m1,
-                                        mountpoint=FilePath(b"/xxx")))]),
+                                        mountpoint=FilePath(b"/xxx"))])]),
                     manifestations={m1.dataset_id: m1,
                                     m2.dataset_id: m2})
 

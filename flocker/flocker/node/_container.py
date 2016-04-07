@@ -66,10 +66,10 @@ class StartApplication(PClass):
         application = self.application
 
         volumes = []
-        if application.volume is not None:
-            dataset_id = application.volume.manifestation.dataset_id
+        for volume in application.volumes:
+            dataset_id = volume.manifestation.dataset_id
             volumes.append(DockerVolume(
-                container_path=application.volume.mountpoint,
+                container_path=volume.mountpoint,
                 node_path=self.node_state.paths[dataset_id]))
 
         if application.ports is not None:
@@ -271,25 +271,26 @@ class ApplicationNodeDeployer(object):
             that manifestation and the location in the container where it is
             mounted.
         """
+        attached_volumes = []
         if container.volumes:
             # XXX https://clusterhq.atlassian.net/browse/FLOC-49
             # we only support one volume per container
             # at this time
             # XXX https://clusterhq.atlassian.net/browse/FLOC-773
             # we assume all volumes are datasets
-            docker_volume = list(container.volumes)[0]
-            try:
-                manifestation = path_to_manifestations[
-                    docker_volume.node_path]
-            except KeyError:
-                # Apparently not a dataset we're managing, give up.
-                return None
-            else:
-                return AttachedVolume(
-                    manifestation=manifestation,
-                    mountpoint=docker_volume.container_path,
-                )
-        return None
+            for docker_volume in list(container.volumes):
+                try:
+                    manifestation = path_to_manifestations[
+                        docker_volume.node_path]
+                except KeyError:
+                    # Apparently not a dataset we're managing, give up.
+                    return attached_volumes
+                else:
+                    attached_volumes.append(AttachedVolume(
+                        manifestation=manifestation,
+                        mountpoint=docker_volume.container_path,
+                    ))
+        return attached_volumes
 
     def _ports_for_container(self, container):
         """
@@ -369,7 +370,7 @@ class ApplicationNodeDeployer(object):
         applications = []
         for container in containers:
             image = DockerImage.from_string(container.container_image)
-            volume = self._attached_volume_for_container(
+            volumes = self._attached_volume_for_container(
                 container, path_to_manifestations,
             )
             ports = self._ports_for_container(container)
@@ -378,7 +379,7 @@ class ApplicationNodeDeployer(object):
                 name=container.name,
                 image=image,
                 ports=frozenset(ports),
-                volume=volume,
+                volumes=volumes,
                 environment=environment if environment else None,
                 links=frozenset(links),
                 memory_limit=container.mem_limit,
@@ -567,13 +568,13 @@ class ApplicationNodeDeployer(object):
             not differ or only differs in the allowed ways mentioned above,
             ``False``.
         """
-        volume_state = state.volume
-        volume_configuration = configuration.volume
+        volumes_state = state.volumes
+        volumes_configuration = configuration.volumes
 
         # The volume comparison is too complicated to leave up to `!=` below.
         # Check volumes separately.
-        comparable_state = state.set(volume=None)
-        comparable_configuration = configuration.set(volume=None)
+        comparable_state = state.set(volumes=[])
+        comparable_configuration = configuration.set(volumes=[])
 
         # Restart policies don't implement comparison usefully.  See FLOC-2500.
         restart_state = comparable_state.restart_policy
@@ -597,7 +598,7 @@ class ApplicationNodeDeployer(object):
             not isinstance(restart_state, RestartNever) or
 
             self._restart_for_volume_change(
-                node_state, volume_state, volume_configuration
+                node_state, volumes_state, volumes_configuration
             )
         )
 
@@ -668,15 +669,19 @@ class ApplicationNodeDeployer(object):
         stop_names = {app.name for app in all_applications}.difference(
             desired_local_state)
 
+        def volumes_in_manifestations(application, manifestations):
+            for volume in application.volumes:
+                if volume.manifestation.dataset_id not in manifestations:
+                    return False
+            return True
+
         start_containers = [
             StartApplication(application=app, node_state=current_node_state)
             for app in desired_node_applications
             if ((app.name in start_names) and
                 # If manifestation isn't available yet, don't start:
                 # XXX in FLOC-1240 non-primaries should be checked.
-                (app.volume is None or
-                 app.volume.manifestation.dataset_id in
-                 current_node_state.manifestations))
+                 volumes_in_manifestations(app, current_node_state.manifestations))
         ]
         stop_containers = [
             StopApplication(application=app) for app in all_applications

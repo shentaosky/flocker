@@ -1593,10 +1593,10 @@ class CalculateDesiredStateTests(TestCase):
                 Application(
                     name=u"myapplication",
                     image=DockerImage.from_string(u"image"),
-                    volume=AttachedVolume(
+                    volumes=[AttachedVolume(
                         manifestation=ScenarioMixin.MANIFESTATION,
                         mountpoint=FilePath(b"/data")
-                    ),
+                    )],
                 ),
             ],
             expected_datasets=[
@@ -1791,8 +1791,8 @@ def add_application_with_volume(node_state):
         "applications", {Application(
             name=u"myapplication",
             image=DockerImage.from_string(u"image"),
-            volume=AttachedVolume(manifestation=manifestation,
-                                  mountpoint=FilePath(b"/data")))})
+            volumes=[AttachedVolume(manifestation=manifestation,
+                                  mountpoint=FilePath(b"/data"))])})
 
 
 def create_test_blockdevice_volume_for_dataset_id(dataset_id,

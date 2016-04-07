@@ -42,7 +42,7 @@ class P2PNodeDeployer(object):
     def __init__(self, hostname, volume_service, docker_client=None,
                  network=None, node_uuid=None):
         self.manifestations_deployer = P2PManifestationDeployer(
-            hostname, volume_service, node_uuid=node_uuid)
+            hostname, volume_service, node_uuid=node_uuid, docker_client=docker_client)
         self.applications_deployer = ApplicationNodeDeployer(
             hostname, docker_client, network, node_uuid=node_uuid)
         self.hostname = hostname
@@ -176,10 +176,10 @@ class DeployerTests(AsyncTestCase):
                          image=DockerImage.from_string(
                              image_name),
                          environment=expected_variables,
-                         volume=AttachedVolume(
+                         volumes=[AttachedVolume(
                              manifestation=manifestation,
                              mountpoint=FilePath('/data'),
-                         ),
+                         )],
                          links=frozenset(),
                      )]),
                      manifestations={
@@ -253,10 +253,10 @@ class DeployerTests(AsyncTestCase):
                          image=DockerImage.from_string(
                              image_name),
                          links=frozenset([link]),
-                         volume=AttachedVolume(
+                         volumes=[AttachedVolume(
                              manifestation=manifestation,
                              mountpoint=FilePath('/data'),
-                         ),
+                         )],
                      )]),
                      manifestations={
                          manifestation.dataset_id: manifestation})]))

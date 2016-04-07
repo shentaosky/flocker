@@ -180,10 +180,10 @@ class LocalVolumeManager(object):
         input_file = BytesIO()
         yield input_file
         input_file.seek(0, 0)
-        self._service.receive(volume.node_id, volume.name, input_file)
+        self._service.receive(volume.node_id, volume.name, volume.storagetype, input_file)
 
     def acquire(self, volume):
-        self._service.acquire(volume.node_id, volume.name)
+        self._service.acquire(volume.node_id, volume.name, volume.storagetype)
         return self._service.node_id
 
     def clone_to(self, parent, name):

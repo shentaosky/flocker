@@ -369,10 +369,12 @@ class FakeDockerClient(object):
         units = set(self._units.values())
         return succeed(units)
 
+    def list_sync(self):
+        return set(self._units.values())
+
 
 # Basic namespace for Flocker containers:
 BASE_NAMESPACE = u"flocker--"
-
 
 class TimeoutClient(Client):
     """
@@ -924,6 +926,10 @@ class DockerClient(object):
                         Volume(container_path=FilePath(container_path),
                                node_path=FilePath(node_path))
                     )
+            if name.startswith(u"/" + self.namespace):
+                name = name[1 + len(self.namespace):]
+            else:
+                continue
             # Retrieve environment variables for this container,
             # disregarding any environment variables that are part
             # of the image, rather than supplied in the configuration.

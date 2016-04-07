@@ -10,6 +10,7 @@ from datetime import timedelta
 from functools import partial
 import time
 import socket
+from unittest import skip
 
 from eliot.testing import capture_logging, assertHasMessage
 
@@ -223,6 +224,7 @@ class GenericDockerClientTests(AsyncTestCase):
         d.addCallback(started)
         return d
 
+    @skip('http://172.16.1.41:10080/flocker/flocker_image_build/issues/21')
     @capture_logging(assertHasMessage, LOG_CACHED_IMAGE)
     def test_list_image_data_cached(self, logger):
         """

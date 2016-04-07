@@ -271,52 +271,6 @@ class RestartOnFailure(PClass):
         return (True, "")
 
 
-class Application(PClass):
-    """
-    A single `application <http://12factor.net/>`_ to be deployed.
-
-    :ivar unicode name: A short, human-readable identifier for this
-        application.  For example, ``u"site-example.com"`` or
-        ``u"pgsql-payroll"``.
-
-    :ivar DockerImage image: An image that can be used to run this
-        containerized application.
-
-    :ivar frozenset ports: A ``frozenset`` of ``Port`` instances that
-        should be exposed to the outside world.
-
-    :ivar volume: ``None`` if there is no volume, otherwise an
-        ``AttachedVolume`` instance.
-
-    :ivar frozenset links: A ``frozenset`` of ``Link``s that
-        should be created between applications, or ``None`` if configuration
-        information isn't available.
-
-    :ivar PMap environment: Environment variables that should be exposed
-        in the ``Application`` container, or ``None`` if no environment
-        variables are specified.
-
-    :ivar IRestartPolicy restart_policy: The restart policy for this
-        application.
-
-    :ivar command_line: Custom command to run using the image, a ``PVector``
-        of ``unicode``. ``None`` means use default.
-
-    :ivar bool running: Whether or not the application is running.
-    """
-    name = field(mandatory=True)
-    image = field(mandatory=True, type=DockerImage)
-    ports = pset_field(Port)
-    volume = field(mandatory=True, initial=None)
-    links = pset_field(Link)
-    memory_limit = field(mandatory=True, initial=None)
-    cpu_shares = field(mandatory=True, initial=None)
-    restart_policy = field(mandatory=True, initial=RestartNever())
-    environment = field(mandatory=True, initial=pmap(), factory=pmap,
-                        type=PMap)
-    running = field(mandatory=True, initial=True, type=bool)
-    command_line = pvector_field(unicode, optional=True, initial=None)
-
 class StorageType(Values):
     """
     Storage Type in flocker.
@@ -400,6 +354,52 @@ class AttachedVolume(PClass):
         return self.manifestation.dataset
 
 
+class Application(PClass):
+    """
+    A single `application <http://12factor.net/>`_ to be deployed.
+
+    :ivar unicode name: A short, human-readable identifier for this
+        application.  For example, ``u"site-example.com"`` or
+        ``u"pgsql-payroll"``.
+
+    :ivar DockerImage image: An image that can be used to run this
+        containerized application.
+
+    :ivar frozenset ports: A ``frozenset`` of ``Port`` instances that
+        should be exposed to the outside world.
+
+    :ivar volumes: ``None`` if there is no volume, otherwise an list of
+        ``AttachedVolume`` instance.
+
+    :ivar frozenset links: A ``frozenset`` of ``Link``s that
+        should be created between applications, or ``None`` if configuration
+        information isn't available.
+
+    :ivar PMap environment: Environment variables that should be exposed
+        in the ``Application`` container, or ``None`` if no environment
+        variables are specified.
+
+    :ivar IRestartPolicy restart_policy: The restart policy for this
+        application.
+
+    :ivar command_line: Custom command to run using the image, a ``PVector``
+        of ``unicode``. ``None`` means use default.
+
+    :ivar bool running: Whether or not the application is running.
+    """
+    name = field(mandatory=True)
+    image = field(mandatory=True, type=DockerImage)
+    ports = pset_field(Port)
+    volumes = pset_field(AttachedVolume)
+    links = pset_field(Link)
+    memory_limit = field(mandatory=True, initial=None)
+    cpu_shares = field(mandatory=True, initial=None)
+    restart_policy = field(mandatory=True, initial=RestartNever())
+    environment = field(mandatory=True, initial=pmap(), factory=pmap,
+                        type=PMap)
+    running = field(mandatory=True, initial=True, type=bool)
+    command_line = pvector_field(unicode, optional=True, initial=None)
+
 def _keys_match(attribute):
     """
     Create an invariant for a ``field`` holding a ``pmap``.
@@ -455,9 +455,10 @@ class Node(PClass):
     def __invariant__(self):
         manifestations = self.manifestations.values()
         for app in self.applications:
-            if app.volume is not None:
-                if app.volume.manifestation not in manifestations:
-                    return (False, '%r manifestation is not on node' % (app,))
+            if app.volumes is not None:
+                for volume in app.volumes:
+                    if volume.manifestation not in manifestations:
+                        return (False, '%r manifestation is not on node' % (app,))
         return (True, "")
 
     def __new__(cls, hostname=None, **kwargs):
@@ -686,14 +687,15 @@ class Deployment(PClass):
                     # We only need to perform a move if the node currently
                     # hosting the container is not the node it's moving to.
                     if not same_node(node, target_node):
-                        # If the container has a volume, we need to add the
+                        # If the container has a volumes, we need to add the
                         # manifestation to the new host first.
-                        if application.volume is not None:
-                            dataset_id = application.volume.dataset.dataset_id
-                            target_node = target_node.transform(
-                                ("manifestations", dataset_id),
-                                application.volume.manifestation
-                            )
+                        if application.volumes is not None:
+                            for volume in application.volumes:
+                                dataset_id = volume.dataset.dataset_id
+                                target_node = target_node.transform(
+                                    ("manifestations", dataset_id),
+                                    volume.manifestation
+                                )
                         # Now we can add the application to the new host.
                         target_node = target_node.transform(
                             ["applications"], lambda s: s.add(application))
@@ -702,8 +704,8 @@ class Deployment(PClass):
                             ["applications"], lambda s: s.remove(application))
                         # Finally we can now remove the manifestation from the
                         # current host too.
-                        if application.volume is not None:
-                            dataset_id = application.volume.dataset.dataset_id
+                        for volume in application.volumes:
+                            dataset_id = volume.dataset.dataset_id
                             node = node.transform(
                                 ("manifestations", dataset_id), discard
                             )

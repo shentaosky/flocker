@@ -211,7 +211,7 @@ class P2PManifestationDeployer(object):
     :ivar unicode hostname: The hostname of the node that this is running on.
     :ivar VolumeService volume_service: The volume manager for this node.
     """
-    def __init__(self, hostname, volume_service, node_uuid=None):
+    def __init__(self, hostname, volume_service, node_uuid=None, docker_client=None):
         if node_uuid is None:
             # To be removed in https://clusterhq.atlassian.net/browse/FLOC-1795
             warn("UUID is required, this is for backwards compat with existing"
@@ -221,7 +221,11 @@ class P2PManifestationDeployer(object):
         self.node_uuid = node_uuid
         self.hostname = hostname
         self.volume_service = volume_service
-        self.docker_client = DockerClient()
+        # interact with all containers
+        if docker_client is None:
+            self.docker_client = DockerClient(namespace=b'')
+        else:
+            self.docker_client = docker_client
 
     def discover_state(self, cluster_state):
         """
@@ -256,33 +260,34 @@ class P2PManifestationDeployer(object):
             containers = self.docker_client.list_sync()
             applications = []
 
-            # TODO: need to support multiple flocker-volume for each container
             for container in containers:
                 if container.activation_state != "active":
                     continue
+                volumes = []
                 for volume in container.volumes:
                     if available_manifestations.has_key(volume.node_path):
                         dataset_id, _, _ = available_manifestations.get(volume.node_path)
-                        attached_volume = AttachedVolume(
+                        volumes.append(AttachedVolume(
                             manifestation=manifestations.get(dataset_id),
                             mountpoint=volume.container_path,
                         )
+                        )
 
                         # leave some filed empty, since we not using them
-                        applications.append(Application(
-                            name=container.name,
-                            image=DockerImage.from_string(container.container_image),
-                            ports=frozenset(),
-                            volume=attached_volume,
-                            environment=None,
-                            links=frozenset(),
-                            memory_limit=container.mem_limit,
-                            cpu_shares=container.cpu_shares,
-                            restart_policy=container.restart_policy,
-                            running=(container.activation_state == u"active"),
-                            command_line=container.command_line,
-                        )
-                        )
+                applications.append(Application(
+                    name=container.name,
+                    image=DockerImage.from_string(container.container_image),
+                    ports=frozenset(),
+                    volumes=volumes,
+                    environment=None,
+                    links=frozenset(),
+                    memory_limit=container.mem_limit,
+                    cpu_shares=container.cpu_shares,
+                    restart_policy=container.restart_policy,
+                    running=(container.activation_state == u"active"),
+                    command_line=container.command_line,
+                )
+                )
 
             return NodeLocalState(
                 node_state=NodeState(
@@ -314,7 +319,6 @@ class P2PManifestationDeployer(object):
         if local_state_primary.applications is None:
             return sequentially(changes=[])
 
-        print b"local_state_primary.applications %s " % local_state_primary.applications
         phases = []
 
         not_in_use_datasets = NotInUseDatasets(
