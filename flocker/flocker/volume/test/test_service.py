@@ -8,6 +8,7 @@ from io import BytesIO
 import sys
 import json
 from contextlib import contextmanager
+from twisted.internet.defer import succeed
 
 from uuid import uuid4
 from StringIO import StringIO
@@ -461,6 +462,9 @@ class VolumeServiceAPITests(AsyncTestCase):
             def snapshots(self, volume):
                 return volume.get_filesystem().snapshots()
 
+            def find_volumes(self, volume):
+                return succeed([volume])
+
             @contextmanager
             def receive(self, volume):
                 writer = BytesIO()
@@ -493,7 +497,8 @@ class VolumeServiceAPITests(AsyncTestCase):
         service.startService()
 
         self.assertRaises(ValueError, service.receive,
-                          service.node_id.encode("ascii"), b"lalala", b"bronze", None)
+                          service.node_id.encode("ascii"), b"lalala", b"bronzervicse"
+                                                                      b"", None)
 
     def test_receive_creates_volume(self):
         """Receiving creates a volume with the given node_id and name."""

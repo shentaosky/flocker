@@ -9,9 +9,9 @@ from twisted.python.filepath import FilePath
 from twisted.internet.defer import succeed, maybeDeferred, DeferredList, fail
 
 from zope.interface import implementer
-from flocker.common._node_config import DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT
-from flocker.common._node_config import FLOCKER_POOL
-from flocker.control._model import StorageType
+from ..common._node_config import DEFAULT_CONFIG_PATH, FLOCKER_MOUNTPOINT, AGENT_CONFIG
+from ..common._node_config import FLOCKER_POOL
+from ..control._model import StorageType
 
 from .service import (
     Volume, VolumeScript, ICommandLineVolumeScript, VolumeName,
@@ -49,17 +49,54 @@ def flocker_volume_options(cls):
          "The ZFS pool to use for volumes."],
         ["mountpoint", None, FLOCKER_MOUNTPOINT.path,
          "The path where ZFS filesystems will be mounted."],
+        ["agentconfig", None, AGENT_CONFIG.path,
+         "The path to flocker agent configuration file, containing the storage pool configuration"],
     ]
 
     original_postOptions = cls.postOptions
 
     def postOptions(self):
         self["config"] = FilePath(self["config"])
+        self["agentconfig"] = FilePath(self["agentconfig"])
         original_postOptions(self)
 
     cls.postOptions = postOptions
 
     return cls
+
+
+class _FindVolumesSubcommandOptions(Options):
+    """
+    Command line options for ``flocker-volume find-volumes``.
+    """
+
+    longdesc = """find a particular volume.
+
+    Parameters:
+
+    * name: The name of the volume.
+
+    * storagetype: the name of desired storage type
+    """
+
+    def parseArgs(self, name, storagetype):
+        self["name"] = name
+        self["storagetype"] = storagetype
+
+    def run(self, service):
+        volume = Volume(node_id=None,
+                        name=VolumeName.from_bytes(self["name"]),
+                        service=service, storagetype=StorageType.lookupByValue(self["storagetype"]))
+
+        d = service.pool.search_dataset(volume)
+
+        def get_dataset(filesystems):
+            for fs in filesystems:
+                node_id, dastaset_id = fs.get_nodeid_datasetid()
+                sys.stdout.write(b"%s\t%s\t%s\n" % (fs.storagetype.value, node_id.encode("ascii"), dastaset_id))
+            return succeed([])
+        d.addCallback(get_dataset)
+        return d
 
 
 class _SnapshotsSubcommandOptions(Options):
@@ -75,35 +112,26 @@ class _SnapshotsSubcommandOptions(Options):
 
     * name: The name of the volume.
 
-    * pool: The name of the deseired storage type.
+    * storagetype: The name of the desired storage type.
     """
 
-    def parseArgs(self, node_id, name, pool):
+    def parseArgs(self, node_id, name, storagetype):
         self["node_id"] = node_id.decode("ascii")
         self["name"] = name
-        self._storagetype = StorageType.lookupByValue(pool)
+        self["storagetype"] = storagetype
 
     def run(self, service):
+        volume = Volume(node_id=self["node_id"],
+                        name=VolumeName.from_bytes(self["name"]),
+                        service=service, storagetype=StorageType.lookupByValue(self["storagetype"]))
+        filesystem = volume.get_filesystem()
+        snapshots = filesystem.snapshots()
 
-        d = service.pool.search_dataset(self["name"])
-
-        def get_snapshots(filesystems):
-            if len(filesystems) > 1:
-                return fail(b"dataset_name: %s, matching result %s" % self["name"], filesystems)
-
-            def print_snapshots(snapshots):
-                for snapshot in snapshots:
-                    sys.stdout.write(snapshot.name + b"\n")
-
-            # should only one or none filesystem existed from now on
-            if len(filesystems) == 1:
-                snapshots = filesystems.pop().snapshots()
-                return snapshots.addCallback(print_snapshots)
-            return succeed([])
-
-        d.addCallback(get_snapshots)
-
-        return d
+        def got_snapshots(snapshots):
+            for snapshot in snapshots:
+                sys.stdout.write(snapshot.name + b"\n")
+        snapshots.addCallback(got_snapshots)
+        return snapshots
 
 
 class _ReceiveSubcommandOptions(Options):
@@ -137,36 +165,7 @@ class _ReceiveSubcommandOptions(Options):
 
         :param VolumeService service: The volume manager service to utilize.
         """
-        # get the matching dataset and rename to sender.node_id and get the snapshots
-
-        d = service.pool.search_dataset(self["name"])
-
-        sender_nodeid = self["node_id"]
-        dataset_name = self["name"]
-
-        def rename_to_send_nodeid(filesystems):
-            if len(filesystems) > 1:
-                return fail(b"dataset_name: %s, matching result %s" % dataset_name, filesystems)
-
-            if len(filesystems) == 1:
-                fs = filesystems.pop()
-                node_id, dataset_id = fs.get_nodeid_datasetid()
-                if node_id == sender_nodeid:
-                    return fs
-                volume = Volume(node_id=node_id, name=VolumeName.from_bytes(dataset_id), service=service, storagetype=fs.storagetype)
-                return volume.change_owner(sender_nodeid)
-            return succeed([])
-        d.addCallback(rename_to_send_nodeid)
-        # TODO: do we also need to migrate dataset to desired pools if pools become avaiable
-
-        def receive_dataset(_):
-            service.receive(sender_nodeid, VolumeName.from_bytes(dataset_name), self._storagetype, sys.stdin)
-
-        def print_err(err):
-            print err
-
-        return d.addCallbacks(receive_dataset, print_err)
-
+        service.receive(self["node_id"], VolumeName.from_bytes(self["name"]), self._storagetype, sys.stdin)
 
 class _AcquireSubcommandOptions(Options):
     """
@@ -273,6 +272,8 @@ class VolumeOptions(Options):
          "Acquire a remotely owned volume."],
         ["clone_to", None, _CloneToSubcommandOptions,
          "Clone an existing volume."],
+        ["find_volumes", None, _FindVolumesSubcommandOptions,
+         "Find existing volumes."],
     ]
 
 

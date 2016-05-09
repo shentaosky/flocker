@@ -12,6 +12,7 @@ Further coverage is provided in
 
 import subprocess
 import errno
+from unittest import skip
 
 from twisted.internet import reactor
 from twisted.internet.task import cooperate
@@ -25,7 +26,7 @@ from ..filesystems.errors import MaximumSizeTooSmall
 from ..filesystems.zfs import (
     Snapshot, ZFSSnapshots, Filesystem, StoragePool, volume_to_dataset,
     zfs_command,
-)
+    CommandFailed)
 from ..service import Volume, VolumeName
 from .._model import VolumeSize
 from ..testtools import create_zfs_pool, service_for_pool
@@ -220,7 +221,7 @@ class StoragePoolTests(AsyncTestCase):
             return pool.change_owner(volume, new_volume)
         d.addCallback(created_filesystems)
 
-        self.assertFailure(d, OSError)
+        self.assertFailure(d, CommandFailed)
 
         def changed_owner(filesystem):
             self.assertEqual(original_mount.child('file').getContent(),
@@ -306,6 +307,7 @@ class StoragePoolTests(AsyncTestCase):
         d.addCallback(created_filesystems)
         return d
 
+    @skip("zfs send with -R options will also copy readonly attr, replace with test_written_created_writable")
     def test_written_created_readonly(self):
         """
         A filesystem which is received from a remote filesystem (which is
@@ -315,6 +317,22 @@ class StoragePoolTests(AsyncTestCase):
 
         def got_volumes(copied):
             self.assertReadOnly(copied.to_volume.get_filesystem().get_path())
+        d.addCallback(got_volumes)
+        return d
+
+    def assertAttrsEqual(self, name, key, value):
+        cmd = [b"zfs", b"get", key, b"-H", b"-o", b"value", name]
+        self.assertEqual(b"%s\n" % value, subprocess.check_output(cmd))
+
+    def test_written_created_writable(self):
+        """
+        A filesystem which is received from a remote filesystem (which is
+        writable in its origin pool) is writeable.
+        """
+        d = create_and_copy(self, build_pool)
+
+        def got_volumes(copied):
+            self.assertAttrsEqual(copied.to_volume.get_filesystem().name, b"readonly", b"off")
         d.addCallback(got_volumes)
         return d
 

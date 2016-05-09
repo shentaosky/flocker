@@ -21,7 +21,9 @@ from twisted.internet.defer import succeed
 from twisted.python.filepath import FilePath
 
 from ..common._ipc import ProcessNode
+from ..control._model import StorageType
 from .filesystems.zfs import Snapshot
+from .service import Volume, VolumeName
 
 
 # Path to SSH private key available on nodes and used to communicate
@@ -92,6 +94,16 @@ class IRemoteVolumeManager(Interface):
         :return: A ``Deferred`` that fires when cloning finished.
         """
 
+    def find_volumes(volume):
+        """
+        Find matching volumes in target node.
+
+        :param Volume volume: The volume for which to find in target node.
+
+        :return: A ``Deferred`` that fires with a ``list`` of ``Volume``
+        """
+
+
 
 @implementer(IRemoteVolumeManager)
 @with_cmp(["_destination", "_config_path"])
@@ -153,8 +165,32 @@ class RemoteVolumeManager(object):
              b"clone_to",
              parent.node_id.encode(b"ascii"),
              parent.name.to_bytes(),
-             name.to_bytes()],
-             parent.get_storagetype().value).decode("ascii")
+             name.to_bytes(),
+             parent.get_storagetype().value
+             ]).decode("ascii")
+
+    def find_volumes(self, volume):
+        """
+        Run ``flocker-volume find-volumes`` on the destination and parse the
+        output into a ``list`` of ``Volumes`` instances.
+        """
+        data = self._destination.get_output(
+            [b"flocker-volume",
+             b"--config", self._config_path.path,
+             b"find_volumes",
+             volume.name.to_bytes(),
+             volume.get_storagetype().value]
+        )
+
+        volumes = []
+        for line in data.splitlines():
+            res = line.split("\t", -1)
+            volumes.append(Volume(node_id=res[1],
+                                  name=VolumeName.from_bytes(res[2]),
+                                  storagetype=StorageType.lookupByValue(res[0]),
+                                  service=None))
+        return succeed(volumes)
+
 
 
 @implementer(IRemoteVolumeManager)
@@ -188,3 +224,6 @@ class LocalVolumeManager(object):
 
     def clone_to(self, parent, name):
         return self._service.clone_to(parent, name)
+
+    def find_volumes(self, volume):
+        return succeed([volume])

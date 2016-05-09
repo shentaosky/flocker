@@ -124,7 +124,7 @@ class IStoragePoolsService(Interface):
     Service to manager multiple IStoragePool instance on the same node
     """
 
-    def search_dataset(dataset_id):
+    def search_dataset(volume):
         """
         Search dataset on underlying storage pools
 

@@ -267,7 +267,10 @@ class Filesystem(object):
 
     def get_nodeid_datasetid(self):
         # code in service.enumerate() flocker/volumes/service.py use fs path , instead of volume name
-        node_id, dataset_id = self.dataset.split(b".", 1)
+        try:
+            node_id, dataset_id = self.dataset.split(b".", 1)
+        except ValueError as e:
+            raise ValueError(b"failed to parse dataset name %s" % self.dataset)
         # We convert to a UUID object for validation purposes:
         UUID(node_id)
         self._node_id = node_id
@@ -333,6 +336,7 @@ class Filesystem(object):
         """
         Read in zfs stream.
         """
+        need_mount = False
         if self._exists():
             # If the filesystem already exists then this should be an
             # incremental data stream to up date it to a more recent snapshot.
@@ -357,7 +361,8 @@ class Filesystem(object):
         else:
             # If the filesystem doesn't already exist then this is a complete
             # data stream.
-            cmd = [b"zfs", b"receive", self.name]
+            cmd = [b"zfs", b"receive", "-u", self.name]
+            need_mount = True
         ZFS_CONFIG_LOG(message="receive cmd: %s " % cmd).write(self.logger)
         process = Popen(cmd, stdin=PIPE)
         succeeded = False
@@ -370,6 +375,8 @@ class Filesystem(object):
             check_call([b"zfs", b"set",
                         b"mountpoint=" + self._mountpoint.path,
                         self.name])
+            if need_mount:
+                check_call([b"zfs", b"mount", self.name])
 
 
 @implementer(IFilesystemSnapshots)
@@ -484,18 +491,19 @@ class StoragePoolsService(Service):
     """
     logger = Logger()
 
-    def __init__(self, reactor, pool_type=None):
+    def __init__(self, reactor, pool_type=None, agent_config=AGENT_CONFIG):
         """
         :param reactor: A "IReactorProcess"
         :param pool_type: pool type to work on, if None, work on all pools configed by /etc/flocker/agent.yml
         """
         self._reactor = reactor
+        self._agentconfig = agent_config
         self._pools = {}
         self._pool_type = pool_type
 
     def startService(self):
         Service.startService(self)
-        pools_config = yaml.safe_load(AGENT_CONFIG.getContent())
+        pools_config = yaml.safe_load(self._agentconfig.getContent())
         for config in pools_config[b"dataset"][b"pools"]:
             storagetype = StorageType.lookupByValue(config.get(METADATA_STORAGETYPE, StorageType.DEFAULT.value))
             pool = StoragePool(reactor=self._reactor,
@@ -520,6 +528,7 @@ class StoragePoolsService(Service):
 
         self._default_pool = select_default_pool(self._pools)
 
+    # TODO: if new pool is added, default storage poll might changed, http://172.16.1.41:10080/flocker/flocker_image_build/issues/10
     def get_pool(self, volume):
         if self._pools.has_key(volume.get_storagetype()):
             return self._pools.get(volume.get_storagetype())
@@ -566,26 +575,18 @@ class StoragePoolsService(Service):
         dl.addCallback(listed_fs)
         return dl
 
-    def search_dataset(self, dataset_name):
-        task_list = []
+    def search_dataset(self, volume):
+        pool = self.get_pool(volume)
+        filesystems = pool.enumerate()
 
-        for pool in self._pools.itervalues():
-            task_list.append(pool.enumerate())
-
-        d = DeferredList(task_list, consumeErrors=False)
-
-        def get_filesystems(task_results):
-            filesystems = []
-            for (success, fs_list) in task_results:
-                if success is False or fs_list is None:
-                    continue
-                for fs in fs_list:
-                    fs_node_id, fs_name = fs.get_nodeid_datasetid()
-                    if fs_name == dataset_name:
-                        filesystems.append(fs)
-            return filesystems
-        return d.addCallback(get_filesystems)
-
+        def filter_fs(fs_list):
+            fs_res = []
+            for fs in fs_list:
+                fs_node_id, fs_name = fs.get_nodeid_datasetid()
+                if fs_name == volume.name.to_bytes():
+                    fs_res.append(fs)
+            return fs_res
+        return filesystems.addCallback(filter_fs)
 
 
 @implementer(IStoragePool)
@@ -603,7 +604,7 @@ class StoragePool(Service):
     """
     logger = Logger()
 
-    def __init__(self, reactor, name, mountpoint, storagetype):
+    def __init__(self, reactor, name, mountpoint, storagetype=StorageType.DEFAULT):
         """
         :param reactor: A ``IReactorProcess`` provider.
         :param name: The name of storage pool
@@ -636,6 +637,8 @@ class StoragePool(Service):
         # Set the root dataset to be read only; IService.startService
         # doesn't support Deferred results, and in any case startup can be
         # synchronous with no ill effects.
+
+        # TODO: if set to readonly, the mountpoint can not be created, unless　we mount the volume somewhere else
         _sync_command_error_squashed(
             [b"zfs", b"set", b"readonly=off", self._name], self.logger)
 
