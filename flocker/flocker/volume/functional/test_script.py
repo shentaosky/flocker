@@ -9,11 +9,12 @@ from unittest import skipUnless
 from twisted.python.filepath import FilePath
 from twisted.python.procutils import which
 
+from ...control._model import  StorageType
 from ... import __version__
 from ...testtools import (
     skip_on_broken_permissions, attempt_effective_uid, TestCase,
 )
-from ..testtools import create_zfs_pool
+from ..testtools import create_zfs_pool, _create_zfs_pool, get_singlepool_agentconfig_file
 
 _require_installed = skipUnless(which("flocker-volume"),
                                 "flocker-volume not installed")
@@ -92,14 +93,18 @@ class FlockerVolumeSnapshotsTests(TestCase):
         The output of ``flocker-volume snapshots`` is the name of each snapshot
         that exists for the identified filesystem, one per line.
         """
-        pool_name = create_zfs_pool(self)
+        pool_name, pool_path, mount_path = _create_zfs_pool(self)
         dataset = pool_name + b"/myuuid.myns.myfilesystem"
         check_output([b"zfs", b"create", b"-p", dataset])
         check_output([b"zfs", b"snapshot", dataset + b"@somesnapshot"])
         check_output([b"zfs", b"snapshot", dataset + b"@lastsnapshot"])
         config_path = FilePath(self.mktemp())
+        agent_config_content = get_singlepool_agentconfig_file(pool_name, mount_path, StorageType.DEFAULT.value)
+        agent_config = self.make_temporary_config("agent.yml", content=agent_config_content)
+
         snapshots = run(
             b"--config", config_path.path,
             b"--pool", pool_name,
-            b"snapshots", b"myuuid", b"myns.myfilesystem")
+            b"--agentconfig", agent_config.path,
+            b"snapshots", b"myuuid", b"myns.myfilesystem", b"bronze")
         self.assertEqual(snapshots, b"somesnapshot\nlastsnapshot\n")

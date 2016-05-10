@@ -63,6 +63,15 @@ class _MktempMixin(object):
         """
         return self.make_temporary_directory().child('temp')
 
+    def make_temporary_config(self, config_name, content='', permissions=None):
+        """
+        Create a temporary path for use in tests.
+
+        :return: Path to non-existent file or directory.
+        :rtype: FilePath
+        """
+        return make_file(self.make_temporary_directory().child(config_name), content, permissions)
+
     def make_temporary_directory(self):
         """
         Create a temporary directory for use in tests.

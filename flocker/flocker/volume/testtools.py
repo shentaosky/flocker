@@ -15,11 +15,11 @@ from twisted.python.filepath import FilePath
 from twisted.internet.task import Clock
 from twisted.internet import reactor
 
-from ..common import ProcessNode
+from ..common import ProcessNode, make_file
 from ..testtools import TestCase, run_process
 from ._ipc import RemoteVolumeManager
 
-from .filesystems.zfs import StoragePool
+from .filesystems.zfs import StoragePool, StoragePoolsService
 from .service import VolumeService
 from .filesystems.memory import FilesystemStoragePool
 
@@ -56,8 +56,11 @@ def service_for_pool(test, pool):
     test.addCleanup(service.stopService)
     return service
 
-
 def create_zfs_pool(test_case):
+    pool_name, pool_path, mount_path = _create_zfs_pool(test_case)
+    return pool_name
+
+def _create_zfs_pool(test_case):
     """Create a new ZFS pool, then delete it after the test is over.
 
     :param test_case: A ``unittest.TestCase``.
@@ -85,7 +88,7 @@ def create_zfs_pool(test_case):
 
         raise
     test_case.addCleanup(run_process, [b"zpool", b"destroy", pool_name])
-    return pool_name
+    return (pool_name, pool_path.path, mount_path.path)
 
 
 class MutatingProcessNode(ProcessNode):
@@ -111,8 +114,7 @@ class MutatingProcessNode(ProcessNode):
         :return: Modified command arguments.
         """
         return remote_command[:1] + [
-            b"--pool", self.to_service.pool._name,
-            b"--mountpoint", self.to_service.pool._mount_root.path
+            b"--agentconfig", self.to_service.pool._agentconfig.path,
         ] + remote_command[1:]
 
     def run(self, remote_command):
@@ -133,6 +135,27 @@ class ServicePair(object):
     """
 
 
+def get_singlepool_agentconfig_file(pool_name, mount_path, storage_type):
+    return b"dataset:\n" \
+            "  backend: zfs\n" \
+            "  pools:\n" \
+            "    - name: %s\n" \
+            "      mountpoint: %s\n" \
+            "      storagetype: %s" % (pool_name, mount_path, storage_type)
+
+def make_agentconfig_file(config_path, pool_name, mount_path, storage_type):
+    content = get_singlepool_agentconfig_file(pool_name, mount_path, storage_type)
+    make_file(config_path, content)
+    return config_path
+
+def create_realistic_storagepoolsservice(test):
+    name, path, mountpoint = _create_zfs_pool(test)
+    config_dir = test.make_temporary_directory()
+    config_file = config_dir.child("temp_config")
+    agentyml = config_dir.child("agent.yml")
+    make_agentconfig_file(agentyml, name, mountpoint, "bronze")
+    return StoragePoolsService(reactor, agent_config=agentyml), config_file
+
 def create_realistic_servicepair(test):
     """
     Create a ``ServicePair`` that uses ZFS for testing
@@ -142,22 +165,20 @@ def create_realistic_servicepair(test):
 
     :return: A new ``ServicePair``.
     """
-    from_pool = StoragePool(reactor, create_zfs_pool(test),
-                            FilePath(test.mktemp()))
-    from_service = VolumeService(FilePath(test.mktemp()),
-                                 from_pool, reactor=Clock())
+    from_pools, from_config_file = create_realistic_storagepoolsservice(test)
+    from_service = VolumeService(config_path=from_config_file,
+                                 pool=from_pools, reactor=Clock())
     from_service.startService()
     test.addCleanup(from_service.stopService)
 
-    to_pool = StoragePool(reactor, create_zfs_pool(test),
-                          FilePath(test.mktemp()))
-    to_config = FilePath(test.mktemp())
-    to_service = VolumeService(to_config, to_pool, reactor=Clock())
+    to_pools, to_config_file = create_realistic_storagepoolsservice(test)
+    to_service = VolumeService(config_path=to_config_file,
+                                 pool=to_pools, reactor=Clock())
     to_service.startService()
     test.addCleanup(to_service.stopService)
 
     remote = RemoteVolumeManager(MutatingProcessNode(to_service),
-                                 to_config)
+                                to_config_file)
     return ServicePair(from_service=from_service, to_service=to_service,
                        remote=remote)
 

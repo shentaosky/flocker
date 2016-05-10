@@ -10,7 +10,6 @@ from __future__ import absolute_import
 import sys
 import json
 import stat
-import yaml
 from uuid import UUID, uuid4
 
 from zope.interface import Interface, implementer
@@ -36,6 +35,8 @@ WAIT_FOR_VOLUME_INTERVAL = 0.1
 class CreateConfigurationError(Exception):
     """Create the configuration file failed."""
 
+class RemoteFilesystemError(Exception):
+    """remote filesystem is not in healthy state."""
 
 @attributes(["namespace", "dataset_id"])
 class VolumeName(object):
@@ -227,7 +228,6 @@ class VolumeService(Service):
                 try:
                     node_id, name = basename.split(b".", 1)
                     name = VolumeName.from_bytes(name)
-                    # We convert to a UUID object for validation purposes:
                     UUID(node_id)
                 except ValueError:
                     # ValueError may happen because:
@@ -271,19 +271,30 @@ class VolumeService(Service):
         if volume.node_id != self.node_id:
             raise ValueError()
         fs = volume.get_filesystem()
+        destination_volume = volume
         # if failed on getting snapshots, which is caused by rename failed, retry on next iteration
         try:
-            getting_snapshots = destination.snapshots(volume)
+            matched_volumes = destination.find_volumes(volume)
+
+            def get_snapshots(matched_vols):
+                if len(matched_vols) > 1:
+                    raise RemoteFilesystemError()
+                if len(matched_vols) == 0:
+                    return succeed([])
+                destination_volume = matched_vols[0]
+                return destination.snapshots(destination_volume)
+            matched_volumes.addCallback(get_snapshots)
         except IOError as err:
             return succeed([])
 
         def got_snapshots(snapshots):
-            with destination.receive(volume) as receiver:
+            with destination.receive(destination_volume) as receiver:
                 with fs.reader(snapshots) as contents:
                     for chunk in iter(lambda: contents.read(1024 * 1024), b""):
                         receiver.write(chunk)
+            return volume
 
-        pushing = getting_snapshots.addCallback(got_snapshots)
+        pushing = matched_volumes.addCallback(got_snapshots)
         return pushing
 
     def receive(self, volume_node_id, volume_name, storagetype, input_file):
@@ -349,8 +360,8 @@ class VolumeService(Service):
         """
         pushing = maybeDeferred(self.push, volume, destination)
 
-        def pushed(ignored):
-            remote_uuid = destination.acquire(volume)
+        def pushed(destination_volume):
+            remote_uuid = destination.acquire(destination_volume)
             return volume.change_owner(remote_uuid)
         changing_owner = pushing.addCallback(pushed)
         return changing_owner
@@ -428,10 +439,10 @@ class VolumeScript(object):
 
         :return: The started ``VolumeService``.
         """
-        pool = StoragePoolsService(reactor)
+        pool = StoragePoolsService(reactor, agent_config=options["agentconfig"])
 
         service = cls._service_factory(
-            config_path=options["config"], pool=pool, reactor=reactor)
+            config_path=options["config"], pool=pool,reactor=reactor)
         try:
             service.startService()
         except CreateConfigurationError as e:
