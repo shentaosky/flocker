@@ -1,6 +1,6 @@
 FROM        centos:7
 
-MAINTAINER  MENG YANG "yang.meng@transwarp.io"
+MAINTAINER  HuaichengZheng "huaicheng.zheng@transwarp.io"
 
 WORKDIR     /root
 
@@ -18,11 +18,11 @@ RUN         wget https://bootstrap.pypa.io/get-pip.py && \
             python get-pip.py
 
 # install require package in seperate step to accelerate rebuild
-ADD         flocker/requirements.txt /root/flocker/
+ADD         requirements.txt /root/flocker/
 
 RUN         pip install -r /root/flocker/requirements.txt
 
-ADD         flocker /root/flocker
+ADD         ./ /root/flocker
 RUN         pushd /root/flocker && python setup.py install --root /; popd ; rm -rf /root/flocker
 
 
