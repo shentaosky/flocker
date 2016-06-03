@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from tarfile import TarFile
 from io import BytesIO
 
+from pyrsistent import pmap
 from zope.interface import implementer
 
 from characteristic import with_init, with_cmp, with_repr
@@ -49,8 +50,9 @@ class CannedFilesystemSnapshots(object):
 @implementer(IFilesystem)
 @with_cmp(["path"])
 @with_repr(["path", "size"])
-@with_init(["path", "size", "storagetype"],
+@with_init(["path", "size", "status", "storagetype"],
            defaults=dict(size=VolumeSize(maximum_size=None),
+                         status=pmap(),
                          storagetype=StorageType.DEFAULT))
 class DirectoryFilesystem(object):
     """

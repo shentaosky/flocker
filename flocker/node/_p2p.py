@@ -11,7 +11,6 @@ from datetime import timedelta
 
 from zope.interface import implementer
 
-
 from characteristic import attributes
 
 from pyrsistent import PClass, field
@@ -87,6 +86,7 @@ class ResizeDataset(object):
 
     :ivar Dataset dataset: Dataset to resize.
     """
+
     @property
     def eliot_action(self):
         return start_action(
@@ -199,8 +199,10 @@ class DeleteDataset(PClass):
                     deletions.append(service.pool.destroy(volume).addErrback(
                         write_failure, _logger, u"flocker:p2pdeployer:delete"))
             return gatherResults(deletions)
+
         d.addCallback(got_volumes)
         return d
+
 
 @implementer(IDeployer)
 class P2PManifestationDeployer(object):
@@ -211,6 +213,7 @@ class P2PManifestationDeployer(object):
     :ivar unicode hostname: The hostname of the node that this is running on.
     :ivar VolumeService volume_service: The volume manager for this node.
     """
+
     def __init__(self, hostname, volume_service, node_uuid=None, docker_client=None):
         if node_uuid is None:
             # To be removed in https://clusterhq.atlassian.net/browse/FLOC-1795
@@ -241,21 +244,23 @@ class P2PManifestationDeployer(object):
             for volume in volumes:
                 path = volume.get_filesystem().get_path()
                 primary_manifestations[path] = (
-                    volume.name.dataset_id, volume.size.maximum_size, volume.node_id)
+                    volume.name.dataset_id, volume.size.maximum_size, volume.node_id, volume.status)
             return primary_manifestations
+
         volumes.addCallback(map_volumes_to_size)
 
         def got_volumes(available_manifestations):
-            manifestation_paths = {dataset_id: path for (path, (dataset_id, _, _))
+            manifestation_paths = {dataset_id: path for (path, (dataset_id, _, _, _))
                                    in available_manifestations.items()}
 
             manifestations = {}
-            for (dataset_id, maximum_size, node_id) in available_manifestations.values():
+            for (dataset_id, maximum_size, node_id, status) in available_manifestations.values():
                 primary = False
                 if node_id == self.volume_service.node_id:
                     primary = True
                 manifestations[dataset_id] = Manifestation(dataset=Dataset(dataset_id=dataset_id,
-                                                                           maximum_size=maximum_size),
+                                                                           maximum_size=maximum_size,
+                                                                           status=status),
                                                            primary=primary)
             containers = self.docker_client.list_sync()
             applications = []
@@ -266,14 +271,15 @@ class P2PManifestationDeployer(object):
                 volumes = []
                 for volume in container.volumes:
                     if available_manifestations.has_key(volume.node_path):
-                        dataset_id, _, _ = available_manifestations.get(volume.node_path)
-                        volumes.append(AttachedVolume(
-                            manifestation=manifestations.get(dataset_id),
-                            mountpoint=volume.container_path,
-                        )
+                        dataset_id, _, _, _ = available_manifestations.get(volume.node_path)
+                        volumes.append(
+                            AttachedVolume(
+                                manifestation=manifestations.get(dataset_id),
+                                mountpoint=volume.container_path,
+                            )
                         )
 
-                        # leave some filed empty, since we not using them
+                # leave some filed empty, since we not using them
                 applications.append(Application(
                     name=container.name,
                     image=DockerImage.from_string(container.container_image),
@@ -285,8 +291,7 @@ class P2PManifestationDeployer(object):
                     cpu_shares=container.cpu_shares,
                     restart_policy=container.restart_policy,
                     running=(container.activation_state == u"active"),
-                    command_line=container.command_line,
-                )
+                    command_line=container.command_line)
                 )
 
             return NodeLocalState(
@@ -299,6 +304,7 @@ class P2PManifestationDeployer(object):
                     devices={},
                 )
             )
+
         volumes.addCallback(got_volumes)
 
         return volumes
@@ -363,7 +369,7 @@ class P2PManifestationDeployer(object):
             phases.append(in_parallel(changes=[
                 DeleteDataset(dataset=dataset)
                 for dataset in obsoleted
-            ]))
+                ]))
 
         return sequentially(changes=phases,
                             sleep_when_empty=timedelta(seconds=1))
@@ -414,14 +420,14 @@ def find_dataset_changes(uuid, current_state, desired_state):
     uuid_to_hostnames = {node.uuid: node.hostname
                          for node in current_state.nodes}
     desired_datasets = {node.uuid:
-                        set(manifestation.dataset for manifestation
-                            in node.manifestations.values())
+                            set(manifestation.dataset for manifestation
+                                in node.manifestations.values())
                         for node in desired_state.nodes}
     current_datasets = {node.uuid:
-                        set(manifestation.dataset for manifestation
-                            # We pretend ignorance is equivalent to no
-                            # datasets; this is wrong. See FLOC-2060.
-                            in (node.manifestations or {}).values())
+                            set(manifestation.dataset for manifestation
+                                # We pretend ignorance is equivalent to no
+                                # datasets; this is wrong. See FLOC-2060.
+                                in (node.manifestations or {}).values())
                         for node in current_state.nodes}
     local_desired_datasets = set(dataset for dataset in desired_datasets.get(uuid, set())
                                  if dataset.deleted is False)

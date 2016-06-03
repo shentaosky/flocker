@@ -495,6 +495,8 @@ class ConfigurationAPIUserV1(object):
             if dataset.maximum_size is not None:
                 response_dataset[u"maximum_size"] = dataset.maximum_size
 
+            response_dataset[u"status"] = thaw(dataset.status)
+
             response.append(response_dataset)
         return response
 

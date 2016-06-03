@@ -188,6 +188,8 @@ definitions:
           '$ref': 'types.json#/definitions/maximum_size'
         path:
           '$ref': 'types.json#/definitions/node_path'
+        status:
+          '$ref': 'types.json#/definitions/status'
       required:
         - dataset_id
       additionalProperties: false

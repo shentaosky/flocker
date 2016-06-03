@@ -12,6 +12,7 @@ import json
 import stat
 from uuid import UUID, uuid4
 
+from pyrsistent import pmap
 from zope.interface import Interface, implementer
 
 from characteristic import attributes
@@ -247,6 +248,7 @@ class VolumeService(Service):
                     name=name,
                     service=self,
                     size=filesystem.size,
+                    status=filesystem.status,
                     storagetype=filesystem.storagetype)
         enumerating.addCallback(enumerated)
         return enumerating
@@ -367,9 +369,10 @@ class VolumeService(Service):
         return changing_owner
 
 
-@attributes(["node_id", "name", "service", "size", "pool", "storagetype"],
+@attributes(["node_id", "name", "service", "size", "pool", "status", "storagetype"],
             defaults=dict(size=VolumeSize(maximum_size=None),
                           pool=None,
+                          status=pmap(),
                           storagetype=StorageType.DEFAULT))
 class Volume(object):
     """

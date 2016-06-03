@@ -310,6 +310,8 @@ class Dataset(PClass):
     maximum_size = field(mandatory=True, initial=None)
     metadata = field(mandatory=True, type=PMap, factory=pmap, initial=pmap(),
                      serializer=lambda f, d: dict(d))
+    status = field(mandatory=False, type=PMap, factory=pmap, initial=pmap(),
+                     serializer=lambda f, d: dict(d))
 
     def get_storagetype(self):
         type = self.metadata.get(METADATA_STORAGETYPE, StorageType.DEFAULT.value)

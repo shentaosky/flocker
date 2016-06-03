@@ -15,6 +15,7 @@ from subprocess import (
 )
 
 from characteristic import attributes, with_cmp, with_repr
+from pyrsistent import pmap
 
 from zope.interface import implementer
 
@@ -208,7 +209,7 @@ class Filesystem(object):
     logger=Logger()
 
     def __init__(self, pool, dataset, mountpoint=None, size=None,
-                 reactor=None, storagetype=StorageType.DEFAULT):
+                 reactor=None, status=pmap(), storagetype=StorageType.DEFAULT):
         """
         :param pool: The filesystem's pool name, e.g. ``b"hpool"``.
 
@@ -225,6 +226,7 @@ class Filesystem(object):
         self._mountpoint = mountpoint
         self.size = size
         self.storagetype = storagetype
+        self.status = status
         if reactor is None:
             from twisted.internet import reactor
         self._reactor = reactor
@@ -638,7 +640,7 @@ class StoragePool(Service):
         # doesn't support Deferred results, and in any case startup can be
         # synchronous with no ill effects.
 
-        # TODO: if set to readonly, the mountpoint can not be created, unless　we mount the volume somewhere else
+        # TODO: if set to readonly, the mountpoint can not be created, unless we mount the volume somewhere else
         _sync_command_error_squashed(
             [b"zfs", b"set", b"readonly=off", self._name], self.logger)
 
@@ -827,7 +829,7 @@ class StoragePool(Service):
         return self._storagetype
 
 
-@attributes(["dataset", "mountpoint", "refquota"], apply_immutable=True)
+@attributes(["dataset", "mountpoint", "refquota", "status"], apply_immutable=True)
 class _DatasetInfo(object):
     """
     :ivar bytes dataset: The name of the ZFS dataset to which this information
@@ -836,6 +838,8 @@ class _DatasetInfo(object):
         (where it will be auto-mounted by ZFS).
     :ivar int refquota: The value of the dataset's ``refquota`` property (the
         maximum number of bytes the dataset is allowed to have a reference to).
+    :ivar pmap status: The value of the dataset's ``status`` property (the
+        current running status of dataset).
     """
 
 def _remove_dir(ignore, path):
@@ -851,7 +855,7 @@ def _listed(filesystems, pool, storagetype):
     for entry in filesystems:
         filesystem = Filesystem(
             pool, entry.dataset, FilePath(entry.mountpoint),
-            VolumeSize(maximum_size=entry.refquota), storagetype=storagetype)
+            VolumeSize(maximum_size=entry.refquota), status=entry.status, storagetype=storagetype)
         result.add(filesystem)
     return result
 
@@ -876,20 +880,20 @@ def _list_filesystems(reactor, pool):
          # Output exact, machine-parseable values (eg 65536 instead of 64K)
          b"-p",
          # Output each dataset's name, mountpoint and refquota
-         b"-o", b"name,mountpoint,refquota",
+         b"-o", b"name,mountpoint,refquota,used",
          # Look at this pool
          pool])
 
     def listed(output, pool):
         for line in output.splitlines():
-            name, mountpoint, refquota = line.split(b'\t')
+            name, mountpoint, refquota, used = line.split(b'\t')
             name = name[len(pool) + 1:]
             if name:
                 refquota = int(refquota.decode("ascii"))
                 if refquota == 0:
                     refquota = None
                 yield _DatasetInfo(
-                    dataset=name, mountpoint=mountpoint, refquota=refquota)
+                    dataset=name, mountpoint=mountpoint, refquota=refquota, status=pmap({b"used": used}))
 
     listing.addCallback(listed, pool)
     return listing

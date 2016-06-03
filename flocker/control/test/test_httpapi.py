@@ -2640,6 +2640,7 @@ class DatasetsStateTestsMixin(APITestsMixin):
         ])
         expected_dict = dict(
             dataset_id=expected_dataset.dataset_id,
+            status=thaw(expected_dataset.status),
         )
         response = [expected_dict]
         return self.assertResult(
@@ -2681,12 +2682,14 @@ class DatasetsStateTestsMixin(APITestsMixin):
         ])
         expected_nonmanifest_dict = dict(
             dataset_id=expected_nonmanifest_dataset.dataset_id,
+            status=thaw(expected_nonmanifest_dataset.status),
         )
 
         expected_manifest_dict = dict(
             dataset_id=expected_manifest_dataset.dataset_id,
             primary=unicode(expected_uuid),
             path=u"/path/dataset",
+            status=thaw(expected_manifest_dataset.status),
         )
 
         response = [
@@ -2744,6 +2747,7 @@ class DatasetsStateTestsMixin(APITestsMixin):
             dataset_id=expected_dataset.dataset_id,
             primary=unicode(expected_uuid),
             path=u"/path/dataset",
+            status=thaw(expected_dataset.status),
         )
         response = [expected_dict]
         return self.assertResult(
@@ -2787,11 +2791,13 @@ class DatasetsStateTestsMixin(APITestsMixin):
             dataset_id=expected_dataset1.dataset_id,
             primary=unicode(expected_uuid1),
             path=u"/aa",
+            status=thaw(expected_dataset1.status),
         )
         expected_dict2 = dict(
             dataset_id=expected_dataset2.dataset_id,
             primary=unicode(expected_uuid2),
             path=u"/bb",
+            status=thaw(expected_dataset2.status),
         )
         response = [expected_dict1, expected_dict2]
         return self.assertResultItems(

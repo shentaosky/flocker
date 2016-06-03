@@ -72,6 +72,9 @@
                     "maximum_size": [],
                     "metadata": [
                         "pyrsistent._pmap.PMap"
+                    ],
+                    "status": [
+                        "pyrsistent._pmap.PMap"
                     ]
                 }
             },
@@ -208,5 +211,5 @@
         },
         "root": "flocker.control._model.Deployment"
     },
-    "version": "0+unknown"
+    "version": "v1.9.0+5.gefdb430"
 }
