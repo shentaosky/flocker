@@ -29,7 +29,7 @@ from .._deploy import (
     NodeLocalState,
 )
 
-from .._docker import DockerClient, FakeDockerClient
+from .._docker import DockerClient, FakeDockerClient, Unit, Volume
 
 from .._p2p import (
     CreateDataset, HandoffDataset, PushDataset, ResizeDataset,
@@ -38,8 +38,8 @@ from .._p2p import (
 from ...testtools import AsyncTestCase, TestCase, CustomException
 from .. import _p2p
 from ...control._model import (
-    AttachedVolume, Dataset, Manifestation, Leases
-)
+    AttachedVolume, Dataset, Manifestation, Leases,
+    RestartAlways)
 from ...volume.service import VolumeName
 from ...volume._model import VolumeSize
 from ...volume.testtools import create_volume_service
@@ -49,8 +49,8 @@ from .istatechange import make_istatechange_tests
 
 # This models an application that has a volume.
 APPLICATION_WITH_VOLUME_NAME = u"psql-clusterhq"
-DATASET_ID = unicode(uuid4())
-DATASET = Dataset(dataset_id=DATASET_ID)
+DATASET_ID1 = unicode(uuid4())
+DATASET = Dataset(dataset_id=DATASET_ID1)
 APPLICATION_WITH_VOLUME_MOUNTPOINT = FilePath(b"/var/lib/postgresql")
 APPLICATION_WITH_VOLUME_IMAGE = u"clusterhq/postgresql:9.1"
 APPLICATION_WITH_VOLUME = Application(
@@ -64,7 +64,7 @@ APPLICATION_WITH_VOLUME = Application(
 )
 MANIFESTATION = list(APPLICATION_WITH_VOLUME.volumes)[0].manifestation
 
-DATASET_WITH_SIZE = Dataset(dataset_id=DATASET_ID,
+DATASET_WITH_SIZE = Dataset(dataset_id=DATASET_ID1,
                             metadata=DATASET.metadata,
                             maximum_size=1024 * 1024 * 100)
 
@@ -130,7 +130,7 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         self.EMPTY_NODESTATE = NodeState(hostname=u"example.com",
                                          uuid=self.node_uuid)
 
-    DATASET_ID = unicode(uuid4())
+    DATASET_ID1 = unicode(uuid4())
     DATASET_ID2 = unicode(uuid4())
 
     def test_unknown_applications_and_ports(self):
@@ -147,7 +147,7 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
                       manifestations={}, paths={}, devices={},
                       applications=[]))
 
-    def _setup_datasets(self):
+    def _setup_datasets(self, docker_client=None):
         """
         Setup a ``P2PManifestationDeployer`` that will discover two
         manifestations.
@@ -155,7 +155,7 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         :return: Suitably configured ``P2PManifestationDeployer``.
         """
         self.successResultOf(self.volume_service.create(
-            self.volume_service.get(_to_volume_name(self.DATASET_ID))
+            self.volume_service.get(_to_volume_name(self.DATASET_ID1))
         ))
         self.successResultOf(self.volume_service.create(
             self.volume_service.get(_to_volume_name(self.DATASET_ID2))
@@ -164,7 +164,8 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         return P2PManifestationDeployer(
             u'example.com',
             self.volume_service,
-            node_uuid=self.node_uuid
+            node_uuid=self.node_uuid,
+            docker_client=docker_client
         )
 
     def test_uuid(self):
@@ -185,8 +186,8 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         d = api.discover_state(DeploymentState(nodes={self.EMPTY_NODESTATE}))
 
         self.assertEqual(
-            {self.DATASET_ID: Manifestation(
-                dataset=Dataset(dataset_id=self.DATASET_ID),
+            {self.DATASET_ID1: Manifestation(
+                dataset=Dataset(dataset_id=self.DATASET_ID1),
                 primary=True),
              self.DATASET_ID2: Manifestation(
                  dataset=Dataset(dataset_id=self.DATASET_ID2),
@@ -202,9 +203,9 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         d = api.discover_state(DeploymentState(nodes={self.EMPTY_NODESTATE}))
 
         self.assertEqual(
-            {self.DATASET_ID:
+            {self.DATASET_ID1:
              self.volume_service.get(_to_volume_name(
-                 self.DATASET_ID)).get_filesystem().get_path(),
+                 self.DATASET_ID1)).get_filesystem().get_path(),
              self.DATASET_ID2:
              self.volume_service.get(_to_volume_name(
                  self.DATASET_ID2)).get_filesystem().get_path()},
@@ -217,14 +218,14 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         """
         self.successResultOf(self.volume_service.create(
             self.volume_service.get(
-                _to_volume_name(self.DATASET_ID),
+                _to_volume_name(self.DATASET_ID1),
                 size=VolumeSize(maximum_size=1024 * 1024 * 100)
             )
         ))
 
         manifestation = Manifestation(
             dataset=Dataset(
-                dataset_id=self.DATASET_ID,
+                dataset_id=self.DATASET_ID1,
                 maximum_size=1024 * 1024 * 100),
             primary=True,
         )
@@ -238,8 +239,53 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
 
         self.assertEqual(
             self.successResultOf(d).node_state.manifestations[
-                self.DATASET_ID],
+                self.DATASET_ID1],
             manifestation)
+
+    def test_discover_containers(self):
+        dataset1_node_path = self.volume_service.get(_to_volume_name(self.DATASET_ID1)).get_filesystem().get_path()
+        dataset2_node_path = self.volume_service.get(_to_volume_name(self.DATASET_ID2)).get_filesystem().get_path()
+        containers = {
+            u"active_flocker_container": Unit(name=u"active_flocker_container",
+                 container_name=u"flocker--active_flocker_container",
+                 activation_state=u"active",
+                 container_image=u"ubuntu:14.04",
+                 ports=frozenset(),
+                 volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=dataset1_node_path)]),
+                 environment=None,
+                 mem_limit=None,
+                 cpu_shares=None,
+                 restart_policy=RestartAlways(),
+                 command_line=None),
+            u"inactive_flocker_container": Unit(name=u"inactive_flocker_container",
+                 container_name=u"flocker--inactive_flocker_container",
+                 activation_state=u"inactive",
+                 container_image=u"ubuntu:14.04",
+                 ports=frozenset(),
+                 volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=dataset2_node_path)]),
+                 environment=None,
+                 mem_limit=None,
+                 cpu_shares=None,
+                 restart_policy=RestartAlways(),
+                 command_line=None),
+            u"active_non_flocker_container": Unit(
+                name=u"active_non_flocker_container",
+                container_name=u"flocker--active_non_flocker_container",
+                activation_state=u"inactive",
+                container_image=u"ubuntu:14.04",
+                ports=frozenset(),
+                volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=FilePath(b"/tmp/vol1"))]),
+                environment=None,
+                mem_limit=None,
+                cpu_shares=None,
+                restart_policy=RestartAlways(),
+                command_line=None),
+        }
+        docker_client = FakeDockerClient(units=containers)
+        api = self._setup_datasets(docker_client=docker_client)
+        d = api.discover_state(DeploymentState(nodes={self.EMPTY_NODESTATE}))
+
+        self.assertEqual(len(self.successResultOf(d).node_state.applications), 1)
 
 
 NO_CHANGES = NoOp(sleep=timedelta(seconds=1))
@@ -379,7 +425,7 @@ class P2PManifestationDeployerCalculateChangesTests(TestCase):
         desired = Deployment(nodes=[
             Node(hostname=api.hostname,
                  manifestations=node_state.manifestations.transform(
-                     (DATASET_ID, "dataset", "deleted"), True))])
+                     (DATASET_ID1, "dataset", "deleted"), True))])
 
         changes = api.calculate_changes(desired, current,
                                         NodeLocalState(node_state=node_state))
@@ -776,7 +822,7 @@ class P2PManifestationDeployerCalculateChangesTests(TestCase):
         desired = Deployment(nodes=[
             Node(hostname=api.hostname,
                  manifestations=node_state.manifestations.transform(
-                     (DATASET_ID, "dataset", "deleted"), True))])
+                     (DATASET_ID1, "dataset", "deleted"), True))])
 
         changes = api.calculate_changes(desired, current,
                                         NodeLocalState(node_state=node_state))
@@ -806,7 +852,7 @@ class P2PManifestationDeployerCalculateChangesTests(TestCase):
         desired = Deployment(nodes=[
             Node(hostname=api.hostname, uuid=api.node_uuid,
                  manifestations=node_state.manifestations.transform(
-                     (DATASET_ID, "dataset", "deleted"), True))])
+                     (DATASET_ID1, "dataset", "deleted"), True))])
 
         changes = api.calculate_changes(
             desired, current, NodeLocalState(node_state=node_state))
