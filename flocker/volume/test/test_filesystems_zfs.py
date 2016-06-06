@@ -419,6 +419,7 @@ class DatasetInfoTests(TestCase):
             dataset=b"foo",
             mountpoint=b"bar",
             refquota=1234,
+            status={b"used": 12},
         )
 
     def test_immutable_dataset(self):
