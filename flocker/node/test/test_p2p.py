@@ -708,6 +708,43 @@ class P2PManifestationDeployerCalculateChangesTests(TestCase):
                 dataset=MANIFESTATION.dataset)])])
         self.assertEqual(expected, changes)
 
+    def test_dataset_lazy_created(self):
+        """
+        ``P2PManifestationDeployer.calculate_changes`` specifies that a
+        new dataset won't be created if lazycreate is set in metadata
+        """
+        hostname = u"node1.example.com"
+
+        node_state = NodeState(hostname=hostname, applications=[],
+                               manifestations={}, devices={}, paths={})
+        current = DeploymentState(nodes=frozenset({node_state}))
+
+        api = P2PManifestationDeployer(
+            hostname,
+            create_volume_service(self),
+        )
+
+        id1 = unicode(uuid4())
+        dataset1 = Dataset(dataset_id=id1, metadata={u"lazycreate": u"Pending"})
+
+        id2 = unicode(uuid4())
+        dataset2 = Dataset(dataset_id=id2, metadata={u"lazycreate": u"Done"})
+
+        node = Node(
+            hostname=hostname,
+            manifestations={id1: Manifestation(dataset=dataset1, primary=True),
+                            id2: Manifestation(dataset=dataset2, primary=True)},
+        )
+        desired = Deployment(nodes=frozenset({node}))
+
+        changes = api.calculate_changes(desired, current,
+                                        NodeLocalState(node_state=node_state))
+
+        expected = sequentially(changes=[
+            in_parallel(changes=[CreateDataset(
+                dataset=dataset2)])])
+        self.assertEqual(expected, changes)
+
     def test_dataset_resize(self):
         """
         ``P2PManifestationDeployer.calculate_changes`` specifies that a

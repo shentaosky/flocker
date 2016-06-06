@@ -2214,6 +2214,82 @@ class UpdatePrimaryDatasetTestsMixin(APITestsMixin):
             additional_headers={IF_MATCHES_HEADER:
                                 [b"willnotmatch"]})
 
+    def test_update_metadata(self):
+        """
+        Test update metadata
+        """
+        expected_manifestation = _manifestation(metadata={u"lazycreate": u"Pending", u"foo": u"bar"})
+        node_a = Node(
+            uuid=self.NODE_A_UUID,
+            applications=frozenset(),
+            manifestations={expected_manifestation.dataset_id:
+                                expected_manifestation}
+        )
+        deployment = Deployment(nodes=frozenset([node_a]))
+        saving = self.persistence_service.save(deployment)
+
+        def saved(ignored):
+            creating = self.assertResponseCode(
+                b"POST",
+                b"/configuration/datasets/%s" % (
+                    expected_manifestation.dataset.dataset_id.encode('ascii')
+                ),
+                {u"primary": unicode(self.NODE_B_UUID),
+                 u"metadata": {u"lazycreate": u"Done", u"foo": u"bar1"}},
+                OK,
+            )
+            return creating
+
+        saving.addCallback(saved)
+
+        def check_result(result):
+            deployment = self.persistence_service.get()
+            for node in deployment.nodes:
+                if node.uuid == self.NODE_B_UUID:
+                    actual_dataset = node.manifestations[expected_manifestation.dataset_id].dataset
+                    self.assertEqual(actual_dataset.metadata, {u"lazycreate": u"Done", u"foo": u"bar1"})
+
+        saving.addCallback(check_result)
+        return saving
+
+    def test_update_maximum_size(self):
+        """
+        Test update maximum_size
+        """
+        expected_manifestation = _manifestation(maximum_size=67108864)
+        node_a = Node(
+            uuid=self.NODE_A_UUID,
+            applications=frozenset(),
+            manifestations={expected_manifestation.dataset_id:
+                                expected_manifestation}
+        )
+        deployment = Deployment(nodes=frozenset([node_a]))
+        saving = self.persistence_service.save(deployment)
+
+        def saved(ignored):
+            creating = self.assertResponseCode(
+                b"POST",
+                b"/configuration/datasets/%s" % (
+                    expected_manifestation.dataset.dataset_id.encode('ascii')
+                ),
+                {u"primary": unicode(self.NODE_B_UUID),
+                 u"maximum_size": 671088640},
+                OK,
+                )
+            return creating
+
+        saving.addCallback(saved)
+
+        def check_result(result):
+            deployment = self.persistence_service.get()
+            for node in deployment.nodes:
+                if node.uuid == self.NODE_B_UUID:
+                    actual_dataset = node.manifestations[expected_manifestation.dataset_id].dataset
+                    self.assertEqual(actual_dataset.maximum_size, 671088640)
+
+        saving.addCallback(check_result)
+        return saving
+
 
 RealTestsUpdatePrimaryDataset, MemoryTestsUpdatePrimaryDataset = (
     buildIntegrationTests(

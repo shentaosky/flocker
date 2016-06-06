@@ -429,10 +429,16 @@ def find_dataset_changes(uuid, current_state, desired_state):
                                 # datasets; this is wrong. See FLOC-2060.
                                 in (node.manifestations or {}).values())
                         for node in current_state.nodes}
+    # lazy creation at controller-node
     local_desired_datasets = set(dataset for dataset in desired_datasets.get(uuid, set())
                                  if dataset.deleted is False)
-    local_desired_dataset_ids = set(dataset.dataset_id for dataset in
-                                    local_desired_datasets)
+    local_desired_dataset_ids = set()
+    for dataset in local_desired_datasets:
+        if u"lazycreate" in dataset.metadata and dataset.metadata[u"lazycreate"] == u"Pending":
+            continue
+        local_desired_dataset_ids.add(dataset.dataset_id)
+    # local_desired_dataset_ids = set(dataset.dataset_id for dataset in local_desired_datasets
+    #                                 if u"lazycreate" in dataset.metadata)
     local_current_dataset_ids = set(dataset.dataset_id for dataset in
                                     current_datasets.get(uuid, set()))
     remote_current_dataset_ids = set()

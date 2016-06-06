@@ -398,7 +398,7 @@ class ConfigurationAPIUserV1(object):
             '/v1/endpoints.json#/definitions/configuration_datasets'},
         schema_store=SCHEMAS,
     )
-    def update_dataset(self, dataset_id, primary=None):
+    def update_dataset(self, dataset_id, primary=None, metadata=None, maximum_size=None):
         """
         Update an existing dataset in the cluster configuration.
 
@@ -427,6 +427,12 @@ class ConfigurationAPIUserV1(object):
             deployment = _update_dataset_primary(
                 deployment, dataset_id, UUID(hex=primary)
             )
+
+        if metadata is not None:
+            deployment = _update_dataset_metadata(deployment, dataset_id, metadata)
+
+        if maximum_size is not None:
+            deployment = _update_dataset_maximum_size(deployment, dataset_id, maximum_size)
 
         saving = self.persistence_service.save(deployment)
 
@@ -1185,6 +1191,24 @@ def _update_dataset_maximum_size(deployment, dataset_id, maximum_size):
     )
     return deployment.set(nodes=deployment.nodes.add(node))
 
+def _update_dataset_metadata(deployment, dataset_id, metadata):
+    """
+    Update the ``deployment`` so that the ``Dataset`` with the supplied
+    ``dataset_id`` has the supplied ``metadata``.
+
+    :param Deployment deployment: The deployment containing the dataset to be
+        updated.
+    :param unicode dataset_id: The ID of the dataset to be updated.
+    :param metadata: The new metadata of the dataset
+    :returns: An updated ``Deployment``.
+    """
+    manifestation, node = _find_manifestation_and_node(deployment, dataset_id)
+    deployment = deployment.set(nodes=deployment.nodes.discard(node))
+    node = node.transform(
+        ['manifestations', dataset_id, 'dataset', 'metadata'],
+        metadata
+    )
+    return deployment.set(nodes=deployment.nodes.add(node))
 
 def manifestations_from_deployment(deployment, dataset_id):
     """

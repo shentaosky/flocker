@@ -306,6 +306,10 @@ definitions:
     properties:
       primary:
         '$ref': '#/definitions/primary'
+      metadata:
+        '$ref': '#/definitions/metadata'
+      maximum_size:
+        '$ref': '#/definitions/maximum_size'
     additionalProperties: false
 
   lease_expiration:
