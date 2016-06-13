@@ -942,7 +942,12 @@ class DockerClient(object):
             if container_environment is not None:
                 for environment in container_environment:
                     if environment not in image_environment:
-                        env_key, env_value = environment.split('=', 1)
+                        # in case some illeage environment, eg as `export FOO`
+                        try:
+                            env_key, env_value = environment.split('=', 1)
+                        except ValueError:
+                            env_key=environment
+                            env_value=""
                         unit_environment.append((env_key, env_value))
             unit_environment = (
                 Environment(variables=frozenset(unit_environment))
