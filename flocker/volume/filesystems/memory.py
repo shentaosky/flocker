@@ -21,7 +21,7 @@ from .errors import MaximumSizeTooSmall
 from flocker.control._model import StorageType
 from .interfaces import (
     IFilesystemSnapshots, IStoragePool, IFilesystem,
-    FilesystemAlreadyExists)
+    FilesystemAlreadyExists, IStoragePoolsService)
 from .zfs import Snapshot
 
 from .._model import VolumeSize
@@ -148,7 +148,7 @@ class DirectoryFilesystem(object):
             pass
 
 
-@implementer(IStoragePool)
+@implementer(IStoragePool, IStoragePoolsService)
 class FilesystemStoragePool(Service):
     """
     A :class:`IStoragePool` implementation that just creates directories.
@@ -249,3 +249,6 @@ class FilesystemStoragePool(Service):
                     )
                 )
         return succeed(filesystems)
+
+    def enumerate_pool_status(self):
+        return succeed({u"gold": pmap({b"name": b"test", b"foo": b"bar"})})

@@ -18,6 +18,8 @@ class VersionExtensionsTest(TestCase):
         ``|latest-installable|`` in a source file with the current
         installable version in the output file.
         """
+        dst_dir = FilePath(self.mktemp())
+        dst_dir.makedirs()
         temp_dir = FilePath(self.mktemp())
         temp_dir.makedirs()
         source_file = temp_dir.child('contents.rst')
@@ -31,7 +33,7 @@ class VersionExtensionsTest(TestCase):
             '-C',   # don't look for config file, use -D flags instead
             '-D', 'extensions=flocker.docs.version_extensions',
             temp_dir.path,      # directory containing source/config files
-            temp_dir.path,      # directory containing build files
+            dst_dir.path,      # directory containing build files
             source_file.path])  # source file to process
         expected = 'PRE-{}-POST'.format(get_installable_version(version))
         content = temp_dir.child('contents.html').getContent()

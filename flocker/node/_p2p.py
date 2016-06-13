@@ -13,7 +13,7 @@ from zope.interface import implementer
 
 from characteristic import attributes
 
-from pyrsistent import PClass, field
+from pyrsistent import PClass, field, pmap
 
 from eliot import write_failure, Logger, start_action
 
@@ -23,7 +23,7 @@ from . import IStateChange, in_parallel, sequentially
 
 from ..control._model import (
     DatasetChanges, DatasetHandoff, NodeState, Manifestation, Dataset,
-    ip_to_uuid, Application, AttachedVolume, DockerImage)
+    ip_to_uuid, Application, AttachedVolume, DockerImage, DATASET_LAZY_CREATE, DATASET_LAZY_CREATE_PENDING)
 from ..volume._ipc import RemoteVolumeManager, standard_node
 from ..volume._model import VolumeSize
 from ..volume.service import VolumeName
@@ -294,19 +294,24 @@ class P2PManifestationDeployer(object):
                     command_line=container.command_line)
                 )
 
-            return NodeLocalState(
-                node_state=NodeState(
-                    uuid=self.node_uuid,
-                    hostname=self.hostname,
-                    applications=applications,
-                    manifestations=manifestations,
-                    paths=manifestation_paths,
-                    devices={},
+            d = self.volume_service.enumrate_pool_status()
+            def got_status(status):
+                return NodeLocalState(
+                    node_state=NodeState(
+                        uuid=self.node_uuid,
+                        hostname=self.hostname,
+                        applications=applications,
+                        manifestations=manifestations,
+                        paths=manifestation_paths,
+                        devices={},
+                        pool_status=pmap(status),
+                    )
                 )
-            )
+            d.addCallback(got_status)
+
+            return d
 
         volumes.addCallback(got_volumes)
-
         return volumes
 
     def calculate_changes(self, configuration, cluster_state, local_state):
@@ -434,7 +439,7 @@ def find_dataset_changes(uuid, current_state, desired_state):
                                  if dataset.deleted is False)
     local_desired_dataset_ids = set()
     for dataset in local_desired_datasets:
-        if u"lazycreate" in dataset.metadata and dataset.metadata[u"lazycreate"] == u"Pending":
+        if DATASET_LAZY_CREATE in dataset.metadata and dataset.metadata[DATASET_LAZY_CREATE] == DATASET_LAZY_CREATE_PENDING:
             continue
         local_desired_dataset_ids.add(dataset.dataset_id)
     # local_desired_dataset_ids = set(dataset.dataset_id for dataset in local_desired_datasets

@@ -241,6 +241,43 @@ definitions:
     allOf:
       - "$ref": "#/definitions/uuid"
 
+  pool_status:
+    title: "PoolStatus"
+    description: |
+      The storage status of a pool on the node
+    type: object
+    # We limit the total number of properties and the lengths of the keys
+    # and values of those properties in order to put an upper bound on the
+    # total amount of metadata we're committing to accept and store.  The
+    # particular values in these limits are arbitrary and aren't as
+    # important as just having some "reasonably" small limits.
+    properties:
+      name:
+        type: string
+      status:
+        '$ref': '#/definitions/pool_status_map'
+    required:
+      - 'name'
+      - 'status'
+    additionalProperties: false
+
+  pool_status_map:
+    title: "PoolStatusMap"
+    description: |
+      The storage status of a pool on the node
+    type: object
+    # We limit the total number of properties and the lengths of the keys
+    # and values of those properties in order to put an upper bound on the
+    # total amount of metadata we're committing to accept and store.  The
+    # particular values in these limits are arbitrary and aren't as
+    # important as just having some "reasonably" small limits.
+    patternProperties:
+      "^.{1,256}$":
+        type: string
+        maxLength: 256
+    maxProperties: 64
+    additionalProperties: false
+
   container_node_uuid:
     title: "Node"
     description: |

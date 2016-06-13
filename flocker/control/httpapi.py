@@ -44,7 +44,7 @@ from ._config import (
     ConfigurationError
 )
 from ._persistence import update_leases
-from ._model import LeaseError
+from ._model import LeaseError, DATASET_LAZY_CREATE, DATASET_LAZY_CREATE_PENDING
 
 from .. import __version__, REST_API_PORT as _port
 REST_API_PORT = _port  # Some modules expect this constant to be here
@@ -92,6 +92,8 @@ LEASE_HELD = make_bad_request(
     code=CONFLICT, description=u"Lease already held.")
 NODE_BY_ERA_NOT_FOUND = make_bad_request(
     code=NOT_FOUND, description=u"No node found with given era.")
+NODE_BY_UUID_NOT_FOUND = make_bad_request(
+    code=NOT_FOUND, description=u"No node found with given uuid.")
 
 _UNDEFINED_MAXIMUM_SIZE = object()
 
@@ -502,6 +504,7 @@ class ConfigurationAPIUserV1(object):
                 response_dataset[u"maximum_size"] = dataset.maximum_size
 
             response_dataset[u"status"] = thaw(dataset.status)
+            response_dataset[u"metadata"] = thaw(dataset.metadata)
 
             response.append(response_dataset)
         return response
@@ -897,9 +900,34 @@ class ConfigurationAPIUserV1(object):
         schema_store=SCHEMAS
     )
     def list_current_nodes(self):
-        return [{u"host": node.hostname, u"uuid": unicode(node.uuid)}
-                for node in
-                self.cluster_state_service.as_deployment().nodes]
+        result = []
+        for node in self.cluster_state_service.as_deployment().nodes:
+            result.append(self._get_node_status(node))
+        return result
+
+    @app.route("/state/nodes/by_uuid/<node_uuid>", methods=['GET'])
+    @user_documentation(
+        u"""
+        List the status of a node in the cluster
+        """,
+        header=u"List status of a nodes in the cluster",
+        examples=[
+            u"list status of a node",
+        ],
+        section=u"common",
+    )
+    @structured(
+        inputSchema={},
+        outputSchema={"$ref":
+                          '/v1/endpoints.json#/definitions/node_status'},
+        schema_store=SCHEMAS
+    )
+    def list_current_node_by_uuid(self, node_uuid):
+        uuid = UUID(node_uuid.encode('UTF-8'))
+        for node in self.cluster_state_service.as_deployment().nodes:
+            if node.uuid == uuid:
+                return self._get_node_status(node)
+        raise NODE_BY_UUID_NOT_FOUND
 
     @app.route("/state/nodes/by_era/<era>", methods=['GET'])
     @user_documentation(
@@ -1105,6 +1133,41 @@ class ConfigurationAPIUserV1(object):
                 response_code, lease_response(leases[dataset_id], now)))
         return d
 
+    def _get_node_status(self, node):
+        node_status = []
+        if node.pool_status is not None:
+            for pool_name, pool_status in node.pool_status.items():
+                node_status.append({u"name": pool_name, u"status": thaw(pool_status)})
+        primary_manifestation = []
+        if node.manifestations is not None:
+            for manifestation in node.manifestations.values():
+                if manifestation.primary and _lazy_create_pending_manifestation(manifestation) == False:
+                    dataset = manifestation.dataset
+                    response_dataset = dict(
+                        dataset_id=dataset.dataset_id,
+                    )
+
+                    response_dataset[u"primary"] = unicode(node.uuid)
+                    response_dataset[u"path"] = self.cluster_state_service.manifestation_path(
+                        node.uuid,
+                        dataset.dataset_id
+                    ).path.decode("utf-8")
+
+                    if dataset.maximum_size is not None:
+                        response_dataset[u"maximum_size"] = dataset.maximum_size
+
+                    response_dataset[u"status"] = thaw(dataset.status)
+                    response_dataset[u"metadata"] = thaw(dataset.metadata)
+
+                    primary_manifestation.append(response_dataset)
+
+        return {u"host": node.hostname, u"uuid": unicode(node.uuid), u"node_status": node_status, u"datasets": primary_manifestation}
+
+def _lazy_create_pending_manifestation(manifestation):
+    metadata = manifestation.dataset.metadata
+    if DATASET_LAZY_CREATE in metadata and metadata[DATASET_LAZY_CREATE] == DATASET_LAZY_CREATE_PENDING:
+        return True
+    return False
 
 def _find_manifestation_and_node(deployment, dataset_id):
     """

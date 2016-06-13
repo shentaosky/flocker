@@ -131,6 +131,13 @@ class IStoragePoolsService(Interface):
         :return Filesystem instance list that represent this dataset_id
         """
 
+    def enumerate_pool_status(volume):
+        """
+        Enumerate status of underlying storage pools
+
+        :return PMap key `storagetype`, value `pool_status`
+        """
+
 class IStoragePool(Interface):
     """
     Pool of on-disk storage where filesystems are stored.

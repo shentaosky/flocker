@@ -896,7 +896,7 @@ class VolumeOwnerChangeTests(TestCase):
         new_volume = self.successResultOf(
             volume.change_owner(self.other_node_id))
         volumes = set(self.successResultOf(self.service.enumerate()))
-        self.assertEqual({new_volume}, volumes)
+        self.assertIn(new_volume, list(volumes))
 
 
 class VolumeScriptCreateVolumeServiceTests(TestCase):

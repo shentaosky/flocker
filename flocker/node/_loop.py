@@ -493,6 +493,7 @@ class ConvergenceLoop(object):
                     manifestations=manifestations,
                     paths=manifestation_paths,
                     devices=node_state.devices,
+                    pool_status=node_state.pool_status,
                 )
             )
 

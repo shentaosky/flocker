@@ -2717,6 +2717,7 @@ class DatasetsStateTestsMixin(APITestsMixin):
         expected_dict = dict(
             dataset_id=expected_dataset.dataset_id,
             status=thaw(expected_dataset.status),
+            metadata=thaw(expected_dataset.metadata),
         )
         response = [expected_dict]
         return self.assertResult(
@@ -2759,6 +2760,7 @@ class DatasetsStateTestsMixin(APITestsMixin):
         expected_nonmanifest_dict = dict(
             dataset_id=expected_nonmanifest_dataset.dataset_id,
             status=thaw(expected_nonmanifest_dataset.status),
+            metadata=thaw(expected_nonmanifest_dataset.metadata)
         )
 
         expected_manifest_dict = dict(
@@ -2766,6 +2768,7 @@ class DatasetsStateTestsMixin(APITestsMixin):
             primary=unicode(expected_uuid),
             path=u"/path/dataset",
             status=thaw(expected_manifest_dataset.status),
+            metadata=thaw(expected_manifest_dataset.metadata)
         )
 
         response = [
@@ -2824,6 +2827,7 @@ class DatasetsStateTestsMixin(APITestsMixin):
             primary=unicode(expected_uuid),
             path=u"/path/dataset",
             status=thaw(expected_dataset.status),
+            metadata=thaw(expected_dataset.metadata),
         )
         response = [expected_dict]
         return self.assertResult(
@@ -2868,12 +2872,14 @@ class DatasetsStateTestsMixin(APITestsMixin):
             primary=unicode(expected_uuid1),
             path=u"/aa",
             status=thaw(expected_dataset1.status),
+            metadata=thaw(expected_dataset1.metadata),
         )
         expected_dict2 = dict(
             dataset_id=expected_dataset2.dataset_id,
             primary=unicode(expected_uuid2),
             path=u"/bb",
             status=thaw(expected_dataset2.status),
+            metadata=thaw(expected_dataset2.metadata),
         )
         response = [expected_dict1, expected_dict2]
         return self.assertResultItems(
@@ -3347,13 +3353,126 @@ class NodesStateTestsMixin(APITestsMixin):
         uuid1 = uuid4()
         hostname2 = u"192.0.2.102"
         uuid2 = uuid4()
+
+        dataset1 = Dataset(dataset_id=unicode(uuid4()))
+        manifestation1 = Manifestation(dataset=dataset1, primary=True)
+        dataset2 = Dataset(dataset_id=unicode(uuid4()))
+        manifestation2 = Manifestation(dataset=dataset2, primary=True)
         self.cluster_state_service.apply_changes(
-            [NodeState(uuid=uuid1, hostname=hostname1),
-             NodeState(uuid=uuid2, hostname=hostname2)])
+            [NodeState(uuid=uuid1,
+                       hostname=hostname1,
+                       manifestations={manifestation1.dataset_id: manifestation1},
+                       paths={manifestation1.dataset_id: FilePath(b"/path/dataset1")},
+                       devices={},
+                       pool_status=pmap({u"silver": pmap({u"name": u"flocker-silver", u"size": u"15M"}), u"gold": pmap({u"name": u"flocker-gold", u"foo": u"bar"})})),
+             NodeState(uuid=uuid2,
+                       hostname=hostname2,
+                       manifestations={manifestation2.dataset_id: manifestation2},
+                       paths={manifestation2.dataset_id: FilePath(b"/path/dataset2")},
+                       devices={},
+                       pool_status=pmap({u"silver": pmap({u"name": u"flocker-silver", u"size": u"15M"}), u"gold": pmap({u"name": u"flocker-gold", u"foo": u"bar"})}))])
         return self.assertResultItems(
             b"GET", b"/state/nodes", None, OK,
-            [{u"host": hostname1, "uuid": unicode(uuid1)},
-             {u"host": hostname2, "uuid": unicode(uuid2)}],
+            [
+                {
+                    u"host": hostname1,
+                    u"uuid": unicode(uuid1),
+                    u"node_status": [
+                        {
+                            u"name": u"silver",
+                            u"status": {u"name": u"flocker-silver", u"size": u"15M"},
+                        },
+                        {
+                            u"name": u"gold",
+                            u"status": {u"name": u"flocker-gold", u"foo": u"bar"},
+                        },
+                    ],
+                    u"datasets": [
+                        {
+                            u"status": {},
+                            u"metadata": {},
+                            u"path": u"/path/dataset1",
+                            u"dataset_id": dataset1.dataset_id,
+                            u"primary": unicode(uuid1),
+                        },
+                    ],
+                },
+                {
+                    u"host": hostname2,
+                    u"uuid": unicode(uuid2),
+                    u"node_status": [
+                        {
+                            u"name": u"silver",
+                            u"status": {u"name": u"flocker-silver", u"size": u"15M"},
+                        },
+                        {
+                            u"name": u"gold",
+                            u"status": {u"name": u"flocker-gold", u"foo": u"bar"},
+                        },
+                    ],
+                    u"datasets": [
+                        {
+                            u"status": {},
+                            u"metadata": {},
+                            u"path": u"/path/dataset2",
+                            u"dataset_id": dataset2.dataset_id,
+                            u"primary": unicode(uuid2),
+                        },
+                    ],
+                },
+            ],
+        )
+
+    def test_nodes_by_uuid(self):
+        """
+        All nodes in the current cluster state are returned.
+        """
+        hostname1 = u"192.0.2.101"
+        uuid1 = uuid4()
+        hostname2 = u"192.0.2.102"
+        uuid2 = uuid4()
+
+        dataset1 = Dataset(dataset_id=unicode(uuid4()))
+        manifestation1 = Manifestation(dataset=dataset1, primary=True)
+        dataset2 = Dataset(dataset_id=unicode(uuid4()))
+        manifestation2 = Manifestation(dataset=dataset2, primary=True)
+        self.cluster_state_service.apply_changes(
+            [NodeState(uuid=uuid1,
+                       hostname=hostname1,
+                       manifestations={manifestation1.dataset_id: manifestation1},
+                       paths={manifestation1.dataset_id: FilePath(b"/path/dataset1")},
+                       devices={},
+                       pool_status=pmap({u"silver": pmap({u"name": u"flocker-silver", u"size": u"15M"}), u"gold": pmap({u"name": u"flocker-gold", u"foo": u"bar"})})),
+             NodeState(uuid=uuid2,
+                       hostname=hostname2,
+                       manifestations={manifestation1.dataset_id: manifestation1},
+                       paths={manifestation1.dataset_id: FilePath(b"/path/dataset1")},
+                       devices={},
+                       pool_status=pmap({u"silver": pmap({u"name": u"flocker-silver", u"size": u"15M"}), u"gold": pmap({u"name": u"flocker-gold", u"foo": u"bar"})}))])
+        return self.assertResultItems(
+            b"GET", b"/state/nodes/by_uuid/" + bytes(uuid1), None, OK,
+            {
+                u"host": hostname1,
+                u"uuid": unicode(uuid1),
+                u"node_status": [
+                    {
+                        u"name": u"silver",
+                        u"status": {u"name": u"flocker-silver", u"size": u"15M"},
+                    },
+                    {
+                        u"name": u"gold",
+                        u"status": {u"name": u"flocker-gold", u"foo": u"bar"},
+                    },
+                ],
+                u"datasets": [
+                    {
+                        u"status": {},
+                        u"path": u"/path/dataset1",
+                        u"dataset_id": dataset1.dataset_id,
+                        u"primary": unicode(uuid1),
+                    },
+                ],
+            },
         )
 
 

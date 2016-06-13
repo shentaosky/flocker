@@ -139,13 +139,55 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         """
         deployer = P2PManifestationDeployer(
             u'example.com', self.volume_service, node_uuid=self.node_uuid, docker_client=FakeDockerClient())
-        self.assertEqual(
-            self.successResultOf(deployer.discover_state(
-                DeploymentState(nodes={self.EMPTY_NODESTATE}))).node_state,
-            NodeState(hostname=deployer.hostname,
-                      uuid=deployer.node_uuid,
-                      manifestations={}, paths={}, devices={},
-                      applications=[]))
+        expect = self.successResultOf(deployer.discover_state(
+            DeploymentState(nodes={self.EMPTY_NODESTATE}))).node_state
+        actual = NodeState(hostname=deployer.hostname,
+                  uuid=deployer.node_uuid,
+                  manifestations={}, paths={}, devices={},
+                  applications=[])
+        self.assertEqual(expect.isEqual(actual),True)
+
+    def _setup_datasets_and_containers(self):
+        dataset1_node_path = self.volume_service.get(_to_volume_name(self.DATASET_ID1)).get_filesystem().get_path()
+        dataset2_node_path = self.volume_service.get(_to_volume_name(self.DATASET_ID2)).get_filesystem().get_path()
+        containers = {
+            u"active_flocker_container": Unit(name=u"active_flocker_container",
+                                              container_name=u"flocker--active_flocker_container",
+                                              activation_state=u"active",
+                                              container_image=u"ubuntu:14.04",
+                                              ports=frozenset(),
+                                              volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=dataset1_node_path)]),
+                                              environment=None,
+                                              mem_limit=None,
+                                              cpu_shares=None,
+                                              restart_policy=RestartAlways(),
+                                              command_line=None),
+            u"inactive_flocker_container": Unit(name=u"inactive_flocker_container",
+                                                container_name=u"flocker--inactive_flocker_container",
+                                                activation_state=u"inactive",
+                                                container_image=u"ubuntu:14.04",
+                                                ports=frozenset(),
+                                                volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=dataset2_node_path)]),
+                                                environment=None,
+                                                mem_limit=None,
+                                                cpu_shares=None,
+                                                restart_policy=RestartAlways(),
+                                                command_line=None),
+            u"active_non_flocker_container": Unit(
+                name=u"active_non_flocker_container",
+                container_name=u"flocker--active_non_flocker_container",
+                activation_state=u"inactive",
+                container_image=u"ubuntu:14.04",
+                ports=frozenset(),
+                volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=FilePath(b"/tmp/vol1"))]),
+                environment=None,
+                mem_limit=None,
+                cpu_shares=None,
+                restart_policy=RestartAlways(),
+                command_line=None),
+        }
+        docker_client = FakeDockerClient(units=containers)
+        return self._setup_datasets(docker_client=docker_client)
 
     def _setup_datasets(self, docker_client=None):
         """
@@ -173,7 +215,7 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         The ``NodeState`` returned from discovery has same UUID as the
         deployer.
         """
-        deployer = self._setup_datasets()
+        deployer = self._setup_datasets_and_containers()
         node_state = self.successResultOf(deployer.discover_state(
             DeploymentState(nodes={self.EMPTY_NODESTATE}))).node_state
         self.assertEqual(node_state.uuid, deployer.node_uuid)
@@ -243,49 +285,17 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
             manifestation)
 
     def test_discover_containers(self):
-        dataset1_node_path = self.volume_service.get(_to_volume_name(self.DATASET_ID1)).get_filesystem().get_path()
-        dataset2_node_path = self.volume_service.get(_to_volume_name(self.DATASET_ID2)).get_filesystem().get_path()
-        containers = {
-            u"active_flocker_container": Unit(name=u"active_flocker_container",
-                 container_name=u"flocker--active_flocker_container",
-                 activation_state=u"active",
-                 container_image=u"ubuntu:14.04",
-                 ports=frozenset(),
-                 volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=dataset1_node_path)]),
-                 environment=None,
-                 mem_limit=None,
-                 cpu_shares=None,
-                 restart_policy=RestartAlways(),
-                 command_line=None),
-            u"inactive_flocker_container": Unit(name=u"inactive_flocker_container",
-                 container_name=u"flocker--inactive_flocker_container",
-                 activation_state=u"inactive",
-                 container_image=u"ubuntu:14.04",
-                 ports=frozenset(),
-                 volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=dataset2_node_path)]),
-                 environment=None,
-                 mem_limit=None,
-                 cpu_shares=None,
-                 restart_policy=RestartAlways(),
-                 command_line=None),
-            u"active_non_flocker_container": Unit(
-                name=u"active_non_flocker_container",
-                container_name=u"flocker--active_non_flocker_container",
-                activation_state=u"inactive",
-                container_image=u"ubuntu:14.04",
-                ports=frozenset(),
-                volumes=frozenset([Volume(container_path=FilePath(u"/tmp/vol1"), node_path=FilePath(b"/tmp/vol1"))]),
-                environment=None,
-                mem_limit=None,
-                cpu_shares=None,
-                restart_policy=RestartAlways(),
-                command_line=None),
-        }
-        docker_client = FakeDockerClient(units=containers)
-        api = self._setup_datasets(docker_client=docker_client)
+        api = self._setup_datasets_and_containers()
         d = api.discover_state(DeploymentState(nodes={self.EMPTY_NODESTATE}))
 
         self.assertEqual(len(self.successResultOf(d).node_state.applications), 1)
+
+    def test_discover_pool_status(self):
+        api = self._setup_datasets_and_containers()
+        d = api.discover_state(DeploymentState(nodes={self.EMPTY_NODESTATE}))
+
+        self.assertEqual(len(self.successResultOf(d).node_state.pool_status), 1)
+
 
 
 NO_CHANGES = NoOp(sleep=timedelta(seconds=1))
