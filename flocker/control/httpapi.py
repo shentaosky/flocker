@@ -901,8 +901,9 @@ class ConfigurationAPIUserV1(object):
     )
     def list_current_nodes(self):
         result = []
+        deployment = self.persistence_service.get()
         for node in self.cluster_state_service.as_deployment().nodes:
-            result.append(self._get_node_status(node))
+            result.append(self._get_node_status(node, deployment))
         return result
 
     @app.route("/state/nodes/by_uuid/<node_uuid>", methods=['GET'])
@@ -924,9 +925,10 @@ class ConfigurationAPIUserV1(object):
     )
     def list_current_node_by_uuid(self, node_uuid):
         uuid = UUID(node_uuid.encode('UTF-8'))
+        deployment = self.persistence_service.get()
         for node in self.cluster_state_service.as_deployment().nodes:
             if node.uuid == uuid:
-                return self._get_node_status(node)
+                return self._get_node_status(node, deployment)
         raise NODE_BY_UUID_NOT_FOUND
 
     @app.route("/state/nodes/by_era/<era>", methods=['GET'])
@@ -1133,7 +1135,7 @@ class ConfigurationAPIUserV1(object):
                 response_code, lease_response(leases[dataset_id], now)))
         return d
 
-    def _get_node_status(self, node):
+    def _get_node_status(self, node, deployment):
         node_status = []
         if node.pool_status is not None:
             for pool_name, pool_status in node.pool_status.items():
@@ -1153,11 +1155,14 @@ class ConfigurationAPIUserV1(object):
                         dataset.dataset_id
                     ).path.decode("utf-8")
 
+
                     if dataset.maximum_size is not None:
                         response_dataset[u"maximum_size"] = dataset.maximum_size
 
                     response_dataset[u"status"] = thaw(dataset.status)
-                    response_dataset[u"metadata"] = thaw(dataset.metadata)
+                    configuration_manifestation, _ = _find_manifestation_and_node(deployment, dataset.dataset_id)
+                    # get metadata
+                    response_dataset[u"metadata"] = thaw(configuration_manifestation.dataset.metadata)
 
                     primary_manifestation.append(response_dataset)
 

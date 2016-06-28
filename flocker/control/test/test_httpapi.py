@@ -3358,6 +3358,19 @@ class NodesStateTestsMixin(APITestsMixin):
         manifestation1 = Manifestation(dataset=dataset1, primary=True)
         dataset2 = Dataset(dataset_id=unicode(uuid4()))
         manifestation2 = Manifestation(dataset=dataset2, primary=True)
+        self.persistence_service.save(Deployment(
+            nodes={
+                Node(
+                    uuid=uuid1,
+                    manifestations={dataset1.dataset_id: manifestation1}
+                ),
+                Node(
+                    uuid=uuid2,
+                    manifestations={dataset2.dataset_id: manifestation2}
+                ),
+            }
+        ))
+
         self.cluster_state_service.apply_changes(
             [NodeState(uuid=uuid1,
                        hostname=hostname1,
@@ -3432,10 +3445,24 @@ class NodesStateTestsMixin(APITestsMixin):
         hostname2 = u"192.0.2.102"
         uuid2 = uuid4()
 
-        dataset1 = Dataset(dataset_id=unicode(uuid4()))
+        dataset1 = Dataset(dataset_id=unicode(uuid4()), metadata=pmap({u"foo": u"bar1"}))
         manifestation1 = Manifestation(dataset=dataset1, primary=True)
-        dataset2 = Dataset(dataset_id=unicode(uuid4()))
+        dataset2 = Dataset(dataset_id=unicode(uuid4()), metadata=pmap({u"foo": u"bar2"}))
         manifestation2 = Manifestation(dataset=dataset2, primary=True)
+
+        self.persistence_service.save(Deployment(
+            nodes={
+                Node(
+                    uuid=uuid1,
+                    manifestations={dataset1.dataset_id: manifestation1}
+                ),
+                Node(
+                    uuid=uuid2,
+                    manifestations={dataset2.dataset_id: manifestation2}
+                ),
+            }
+        ))
+
         self.cluster_state_service.apply_changes(
             [NodeState(uuid=uuid1,
                        hostname=hostname1,
@@ -3470,6 +3497,7 @@ class NodesStateTestsMixin(APITestsMixin):
                         u"path": u"/path/dataset1",
                         u"dataset_id": dataset1.dataset_id,
                         u"primary": unicode(uuid1),
+                        u"metadata": {u"foo": u"bar1"},
                     },
                 ],
             },
