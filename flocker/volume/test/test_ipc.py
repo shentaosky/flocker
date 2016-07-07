@@ -100,10 +100,12 @@ def make_iremote_volume_manager(fixture):
                 to_volume = Volume(node_id=service_pair.from_service.node_id,
                                    name=MY_VOLUME,
                                    service=service_pair.to_service)
+
                 d = service_pair.to_service.enumerate()
 
                 def got_volumes(volumes):
                     self.assertIn(to_volume, list(volumes))
+
                 d.addCallback(got_volumes)
                 return d
             created.addCallback(pushed)

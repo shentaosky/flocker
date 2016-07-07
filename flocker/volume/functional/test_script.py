@@ -61,9 +61,11 @@ class FlockerVolumeTests(TestCase):
 
     def test_config(self):
         """``flocker-volume --config path`` writes a JSON file at that path."""
-        pool = create_zfs_pool(self)
+        pool_name, pool_path, mount_path = _create_zfs_pool(self)
+        agent_config_content = get_singlepool_agentconfig_file(pool_name, mount_path, StorageType.DEFAULT.value)
+        agent_config = self.make_temporary_config("agent.yml", content=agent_config_content)
         path = FilePath(self.mktemp())
-        run(b"--config", path.path, b"--pool", pool)
+        run(b"--config", path.path, b"--pool", pool_name, b"--agentconfig", agent_config.path)
         self.assertTrue(json.loads(path.getContent()))
 
     @skip_on_broken_permissions

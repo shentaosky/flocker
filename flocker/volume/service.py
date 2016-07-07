@@ -253,6 +253,15 @@ class VolumeService(Service):
         enumerating.addCallback(enumerated)
         return enumerating
 
+    def enumrate_pool_status(self):
+        """
+        Get status of all pools managed by this service
+
+        :return: A ``Deferred`` that fires with an iterator of :class:`_PoolInfo`.
+        """
+        enumerating = self.pool.enumerate_pool_status()
+        return enumerating
+
     def push(self, volume, destination):
         """
         Push the latest data in the volume to a remote destination.
@@ -373,7 +382,8 @@ class VolumeService(Service):
             defaults=dict(size=VolumeSize(maximum_size=None),
                           pool=None,
                           status=pmap(),
-                          storagetype=StorageType.DEFAULT))
+                          storagetype=StorageType.DEFAULT),
+            apply_with_cmp=False)
 class Volume(object):
     """
     A data volume's identifier.
@@ -421,6 +431,22 @@ class Volume(object):
 
     def get_storagetype(self):
         return self.storagetype
+
+    def __eq__(self, other):
+        if self.__cmp__(other) != 0:
+            return False
+        return True
+
+    def __cmp__(self, other):
+        """
+        status field is not consider when doing compare
+        """
+        if type(other) is type(self):
+            for a in ["node_id", "name", "service", "size", "pool", "storagetype"]:
+                diff = cmp(getattr(other, a), getattr(self, a))
+                if diff != 0:
+                    return diff
+        return 0
 
 
 @implementer(ICommandLineScript)

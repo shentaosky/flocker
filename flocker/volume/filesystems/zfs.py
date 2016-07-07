@@ -73,6 +73,14 @@ class _AccumulatingProtocol(Protocol):
 
 
 def zfs_command(reactor, arguments):
+    return _zfs_command(reactor=reactor, cmd=b"zfs", arguments=arguments)
+
+
+def zpool_command(reactor, arguments):
+    return _zfs_command(reactor=reactor, cmd=b"zpool", arguments=arguments)
+
+
+def _zfs_command(reactor, cmd, arguments):
     """
     Asynchronously run the ``zfs`` command-line tool with the given arguments.
 
@@ -85,7 +93,7 @@ def zfs_command(reactor, arguments):
         exit code 0), or errbacking with :class:`CommandFailed` or
         :class:`BadArguments` depending on the exit code (1 or 2).
     """
-    endpoint = ProcessEndpoint(reactor, b"zfs", [b"zfs"] + arguments,
+    endpoint = ProcessEndpoint(reactor, cmd, [cmd] + arguments,
                                os.environ)
     d = connectProtocol(endpoint, _AccumulatingProtocol())
     d.addCallback(lambda protocol: protocol._result)
@@ -100,7 +108,7 @@ def zfs_command(reactor, arguments):
         message.write(logger)
         raise CommandFailed
 
-    d.addErrback(async_command_failed, b" zfs ".join(arguments))
+    d.addErrback(async_command_failed, cmd.join(arguments))
     return d
 
 
@@ -493,7 +501,7 @@ class StoragePoolsService(Service):
     """
     logger = Logger()
 
-    def __init__(self, reactor, pool_type=None, agent_config=AGENT_CONFIG):
+    def __init__(self, reactor, agent_config=AGENT_CONFIG):
         """
         :param reactor: A "IReactorProcess"
         :param pool_type: pool type to work on, if None, work on all pools configed by /etc/flocker/agent.yml
@@ -501,7 +509,6 @@ class StoragePoolsService(Service):
         self._reactor = reactor
         self._agentconfig = agent_config
         self._pools = {}
-        self._pool_type = pool_type
 
     def startService(self):
         Service.startService(self)
@@ -565,17 +572,48 @@ class StoragePoolsService(Service):
         dl = DeferredList(deferred_list, consumeErrors=False)
 
         def listed_fs(pools):
-            res = set()
+            filesystems = set()
+
             for (sucess, filesystems_from_pool) in pools:
                 if sucess:
                     for fs in filesystems_from_pool:
-                        res.add(fs)
+                        filesystems.add(fs)
                 else:
                     continue
-            return res
+            return filesystems
 
         dl.addCallback(listed_fs)
         return dl
+
+    def enumerate_pool_status(self):
+        pool_names = {pool._name: pool.get_storagetype().value for pool in self._pools.values()}
+        output_properties = b"name,size,alloc,free"
+
+        cmd = [b"list", b"-H", b"-o", output_properties] + pool_names.keys()
+
+        d = zpool_command(self._reactor, cmd)
+
+        def pool_listed(output):
+            lines = output.splitlines()
+            if len(lines) == 0:
+                return fail(b"empty result return by zpool %s" % cmd)
+
+            headers = output_properties.split(b',')
+            pool_status = {}
+            for line in lines:
+                values = line.split(b'\t')
+                name = values[0]
+                pool_type = pool_names[name]
+                if len(headers) != len(values):
+                    return fail(b"parse error return by %s, output: %s" % (cmd, output))
+                status = {}
+                for i in range(0, len(headers)):
+                    status[headers[i]] = values[i]
+                pool_status[pool_type] = pmap(status)
+            return pool_status
+
+        d.addCallback(pool_listed)
+        return d
 
     def search_dataset(self, volume):
         pool = self.get_pool(volume)
@@ -828,7 +866,6 @@ class StoragePool(Service):
     def get_storagetype(self):
         return self._storagetype
 
-
 @attributes(["dataset", "mountpoint", "refquota", "status"], apply_immutable=True)
 class _DatasetInfo(object):
     """
@@ -840,6 +877,18 @@ class _DatasetInfo(object):
         maximum number of bytes the dataset is allowed to have a reference to).
     :ivar pmap status: The value of the dataset's ``status`` property (the
         current running status of dataset).
+    """
+
+@attributes(["pool", "mountpoint", "status"], apply_immutable=True)
+class _PoolInfo(object):
+    """
+    :ivar bytes pool: The name of the ZFS pool to which this information
+        relates.
+    :ivar bytes mountpoint: The value of the pool's ``mountpoint`` property
+        (where it will be auto-mounted by ZFS).
+    :ivar int used: The value of the pool's ``used`` property
+    :ivar pmap status: The value of the pool's ``status`` property (the
+        current running status of zfs pool).
     """
 
 def _remove_dir(ignore, path):

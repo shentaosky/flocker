@@ -77,6 +77,30 @@ definitions:
       - uuid
     additionalProperties: false
 
+  node_status:
+    description: "status of a node in the cluster."
+    type: object
+    properties:
+      uuid:
+        '$ref': 'types.json#/definitions/node_uuid'
+      host:
+        '$ref': 'types.json#/definitions/node_host'
+      node_status:
+        title: StoragePool status to on this node
+        description: |
+          storage pool status to attach to this node.
+        type: array
+        items:
+          '$ref': 'types.json#/definitions/pool_status'
+        minItems: 0
+        maxItems: 32
+      datasets:
+        '$ref': '#/definitions/state_datasets_array'
+    required:
+      - uuid
+      - host
+    additionalProperties: false
+
   nodes_array:
     decription: "An array of known nodes in the cluster."
     type: array
@@ -87,6 +111,17 @@ definitions:
           '$ref': 'types.json#/definitions/node_host'
         uuid:
           '$ref': 'types.json#/definitions/node_uuid'
+        node_status:
+          title: StoragePool status to on this node
+          description: |
+            storage pool status to attach to this node.
+          type: array
+          items:
+            '$ref': 'types.json#/definitions/pool_status'
+          minItems: 0
+          maxItems: 32
+        datasets:
+          '$ref': '#/definitions/state_datasets_array'
       required:
         - uuid
         - host
@@ -190,6 +225,8 @@ definitions:
           '$ref': 'types.json#/definitions/node_path'
         status:
           '$ref': 'types.json#/definitions/status'
+        metadata:
+          '$ref': 'types.json#/definitions/metadata'
       required:
         - dataset_id
       additionalProperties: false

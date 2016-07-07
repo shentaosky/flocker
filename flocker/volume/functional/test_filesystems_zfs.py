@@ -255,6 +255,7 @@ class StoragePoolTests(AsyncTestCase):
                                 path.child(b"text").setContent, b"hello")
         self.assertEqual(exc.args[0], errno.EROFS)
 
+    @skip("zpool is set to readonly=off at start time")
     def test_remotely_owned_created_readonly(self):
         """
         A filesystem which is created for a remotely owned volume is not
@@ -289,6 +290,7 @@ class StoragePoolTests(AsyncTestCase):
         d.addCallback(created_filesystems)
         return d
 
+    @skip("zpool is set to readonly=off at start time")
     def test_remotely_owned_cloned_readonly(self):
         """
         A filesystem which is cloned into a remotely owned volume is not
@@ -359,6 +361,7 @@ class StoragePoolTests(AsyncTestCase):
         d.addCallback(changed_owner)
         return d
 
+    @skip("zpool is set to readonly=off at start time")
     def test_owner_change_to_remote_becomes_readonly(self):
         """
         A filesystem which was previously locally owned and is now remotely

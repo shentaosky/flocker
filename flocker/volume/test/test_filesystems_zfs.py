@@ -20,8 +20,10 @@ from flocker.control._model import StorageType, METADATA_STORAGETYPE
 
 from ...testtools import (
     FakeProcessReactor, assert_equal_comparison, assert_not_equal_comparison,
-    TestCase,
+    TestCase, AsyncTestCase
 )
+
+from ..testtools import create_multipools_storagepoilsservice
 
 from ..filesystems.zfs import (
     _DatasetInfo,
@@ -442,3 +444,22 @@ class DatasetInfoTests(TestCase):
         """
         self.assertRaises(
             AttributeError, setattr, self.info, "refquota", 321)
+
+
+class TestStoragePoolsService(AsyncTestCase):
+    """
+    Test for StoragePoolsService
+    """
+
+    def test_enumerate_pool_status(self):
+        """
+        test zpool command
+        """
+        pools, _ = create_multipools_storagepoilsservice(self)
+        pools.startService()
+        d = pools.enumerate_pool_status()
+
+        def valid_result(result):
+            self.assertEqual(3, len(result), "incorrect result length")
+        d.addCallback(valid_result)
+        return d

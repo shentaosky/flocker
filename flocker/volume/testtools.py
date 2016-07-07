@@ -135,26 +135,48 @@ class ServicePair(object):
     """
 
 
-def get_singlepool_agentconfig_file(pool_name, mount_path, storage_type):
+def get_agentconfig_file_header():
     return b"dataset:\n" \
-            "  backend: zfs\n" \
-            "  pools:\n" \
-            "    - name: %s\n" \
-            "      mountpoint: %s\n" \
-            "      storagetype: %s" % (pool_name, mount_path, storage_type)
+           "  backend: zfs\n" \
+           "  pools:\n"
+
+
+def get_agentconfig_file_body(pool_name, mount_path, storage_type):
+    return b"    - name: %s\n" \
+           "      mountpoint: %s\n" \
+           "      storagetype: %s\n" % (pool_name, mount_path, storage_type)
+
+
+def get_singlepool_agentconfig_file(pool_name, mount_path, storage_type):
+    return get_agentconfig_file_header() + get_agentconfig_file_body(pool_name, mount_path, storage_type)
+
 
 def make_agentconfig_file(config_path, pool_name, mount_path, storage_type):
-    content = get_singlepool_agentconfig_file(pool_name, mount_path, storage_type)
+    content = get_agentconfig_file_header()
+    content = content + get_agentconfig_file_body(pool_name, mount_path, storage_type)
     make_file(config_path, content)
     return config_path
 
+
 def create_realistic_storagepoolsservice(test):
-    name, path, mountpoint = _create_zfs_pool(test)
+    name, _, mountpoint = _create_zfs_pool(test)
     config_dir = test.make_temporary_directory()
     config_file = config_dir.child("temp_config")
     agentyml = config_dir.child("agent.yml")
     make_agentconfig_file(agentyml, name, mountpoint, "bronze")
+    return StoragePoolsService(reactor, agent_config=agentyml), config_file, agentyml
+
+def create_multipools_storagepoilsservice(test):
+    config_dir = test.make_temporary_directory()
+    config_file = config_dir.child("temp_config")
+    agentyml = config_dir.child("agent.yml")
+    content = get_agentconfig_file_header()
+    for storage_type in [b"gold", b"silver", b"bronze"]:
+        name, _, mountpoint = _create_zfs_pool(test)
+        content = content + get_agentconfig_file_body(name, mountpoint, storage_type)
+    make_file(agentyml, content)
     return StoragePoolsService(reactor, agent_config=agentyml), config_file
+
 
 def create_realistic_servicepair(test):
     """
@@ -165,13 +187,13 @@ def create_realistic_servicepair(test):
 
     :return: A new ``ServicePair``.
     """
-    from_pools, from_config_file = create_realistic_storagepoolsservice(test)
+    from_pools, from_config_file, _ = create_realistic_storagepoolsservice(test)
     from_service = VolumeService(config_path=from_config_file,
                                  pool=from_pools, reactor=Clock())
     from_service.startService()
     test.addCleanup(from_service.stopService)
 
-    to_pools, to_config_file = create_realistic_storagepoolsservice(test)
+    to_pools, to_config_file, _ = create_realistic_storagepoolsservice(test)
     to_service = VolumeService(config_path=to_config_file,
                                  pool=to_pools, reactor=Clock())
     to_service.startService()

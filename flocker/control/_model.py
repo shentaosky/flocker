@@ -286,6 +286,9 @@ class StorageType(Values):
 
 
 METADATA_STORAGETYPE = u"storagetype"
+DATASET_LAZY_CREATE = u"lazycreate"
+DATASET_LAZY_CREATE_PENDING = u"Pending"
+DATASET_LAZY_CREATE_DONE = u"Done"
 
 class Dataset(PClass):
     """
@@ -911,11 +914,13 @@ class NodeState(PRecord):
         Maps ``dataset_id`` to a ``FilePath``.
     :ivar PMap devices: The OS devices by which datasets are made manifest.
         Maps ``dataset_id`` (as a ``UUID``) to a ``FilePath``.
+    :ivar PMap pool_status: The pool status of current node
+        Maps ``storage_type`` to a ``PMap``.
     """
     # Attributes that may be set to None to indicate ignorance:
     _POTENTIALLY_IGNORANT_ATTRIBUTES = ["applications",
                                         "manifestations", "paths",
-                                        "devices"]
+                                        "devices", "pool_status"]
 
     # Dataset attributes that must all be non-None if one is non-None:
     _DATASET_ATTRIBUTES = {"manifestations", "paths", "devices"}
@@ -950,6 +955,7 @@ class NodeState(PRecord):
                                 initial=None, invariant=_keys_match_dataset_id)
     paths = pmap_field(unicode, FilePath, optional=True, initial=None)
     devices = pmap_field(UUID, FilePath, optional=True, initial=None)
+    pool_status = pmap_field(unicode, PMap, optional=True, initial=None)
 
     def update_cluster_state(self, cluster_state):
         return cluster_state.update_node(self)
@@ -973,6 +979,22 @@ class NodeState(PRecord):
                       self._POTENTIALLY_IGNORANT_ATTRIBUTES
                       if getattr(self, attr) is not None]
         return _WipeNodeState(node_uuid=self.uuid, attributes=attributes)
+
+    def isEqual(self, other):
+        if self.compare(other) != 0:
+            return False
+        return True
+
+    def compare(self, other):
+        """
+        pool_status field is not consider when doing compare
+        """
+        if type(other) is type(self):
+            for a in ["uuid", "hostname", "applications", "manifestations", "paths", "devices"]:
+                diff = cmp(getattr(other, a), getattr(self, a))
+                if diff != 0:
+                    return diff
+        return 0
 
 
 @implementer(IClusterStateChange)
