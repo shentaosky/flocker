@@ -140,7 +140,7 @@ class GenericDockerClientTests(AsyncTestCase):
             name=container_name, image=image)
 
     def start_container(self, unit_name,
-                        image_name=u"openshift/busybox-http-app:latest",
+                        image_name=u"172.16.1.41:5000/openshift/busybox-http-app:latest",
                         ports=None, expected_states=(u'active',),
                         environment=None, volumes=(),
                         mem_limit=None, cpu_shares=None,
@@ -210,7 +210,7 @@ class GenericDockerClientTests(AsyncTestCase):
         """
         ``DockerClient.add`` creates a container with the specified image.
         """
-        image_name = u"openshift/busybox-http-app:latest"
+        image_name = u"172.16.1.41:5000/openshift/busybox-http-app:latest"
         name = random_name(self)
         d = self.start_container(name, image_name=image_name)
 
@@ -266,7 +266,7 @@ class GenericDockerClientTests(AsyncTestCase):
 
     @require_docker_version(
         '1.6.0',
-        'This test uses the registry:2 image '
+        'This test uses the 172.16.1.41:5000/registry:2 image '
         'which requires Docker-1.6.0 or newer. '
         'See https://docs.docker.com/registry/deploying/ for details.'
     )
@@ -330,7 +330,7 @@ class GenericDockerClientTests(AsyncTestCase):
         client.exists = lambda _: succeed(False)
         # Illegal container name should make Docker complain when we try to
         # install the container:
-        d = client.add(u"!!!###!!!", u"busybox:latest")
+        d = client.add(u"!!!###!!!", u"172.16.1.41:5000/busybox:latest")
         return self.assertFailure(d, self.clientException)
 
     def test_dead_is_listed(self):
@@ -345,7 +345,7 @@ class GenericDockerClientTests(AsyncTestCase):
         unit never reaches that state.
         """
         name = random_name(self)
-        d = self.start_container(unit_name=name, image_name="busybox:latest",
+        d = self.start_container(unit_name=name, image_name="172.16.1.41:5000/busybox:latest",
                                  expected_states=(u'inactive',))
         return d
 
@@ -360,7 +360,7 @@ class GenericDockerClientTests(AsyncTestCase):
         path = FilePath(self.mktemp())
         path.makedirs()
         path.child(b"Dockerfile.in").setContent(
-            b"FROM busybox\nCMD /bin/true\n")
+            b"FROM 172.16.1.41:5000/busybox\nCMD /bin/true\n")
         builder = DockerImageBuilder(test=self, source_dir=path, cleanup=False)
         d = builder.build()
 
@@ -396,7 +396,7 @@ class GenericDockerClientTests(AsyncTestCase):
         reach an `inactive` substate of `dead`.
         """
         name = random_name(self)
-        d = self.start_container(unit_name=name, image_name="busybox:latest",
+        d = self.start_container(unit_name=name, image_name="172.16.1.41:5000/busybox:latest",
                                  expected_states=(u'inactive',))
 
         def remove_container(client):
@@ -502,7 +502,7 @@ class GenericDockerClientTests(AsyncTestCase):
         docker_dir = FilePath(self.mktemp())
         docker_dir.makedirs()
         docker_dir.child(b"Dockerfile").setContent(
-            b'FROM busybox\n'
+            b'FROM 172.16.1.41:5000/busybox\n'
             b'CMD ["/bin/sh",  "-c", '
             b'"while true; do env && echo WOOT && sleep 1; done"]'
         )
@@ -548,7 +548,7 @@ class GenericDockerClientTests(AsyncTestCase):
         path = FilePath(self.mktemp())
         path.makedirs()
         path.child(b"Dockerfile.in").setContent(
-            b"FROM busybox\n"
+            b"FROM 172.16.1.41:5000/busybox\n"
             b"CMD /bin/true\n"
         )
         builder = DockerImageBuilder(
@@ -638,7 +638,7 @@ class GenericDockerClientTests(AsyncTestCase):
         registry_name = random_name(self)
         registry_starting = self.start_container(
             unit_name=registry_name,
-            image_name='registry:2',
+            image_name='172.16.1.41:5000/registry:2',
             ports=[
                 PortMap(
                     internal_port=5000,
@@ -694,7 +694,7 @@ class GenericDockerClientTests(AsyncTestCase):
             path = FilePath(self.mktemp())
             path.makedirs()
             path.child(b"Dockerfile.in").setContent(
-                b"FROM busybox\n"
+                b"FROM 172.16.1.41:5000/busybox\n"
                 b"CMD /bin/true\n"
             )
             builder = DockerImageBuilder(
@@ -803,7 +803,7 @@ class GenericDockerClientTests(AsyncTestCase):
         name = random_name(self)
         client = self.make_client()
         self.addCleanup(client.remove, name)
-        d = client.add(name, u"busybox:latest")
+        d = client.add(name, u"172.16.1.41:5000/busybox:latest")
 
         def added(_):
             self.assertTrue(
@@ -848,7 +848,7 @@ class GenericDockerClientTests(AsyncTestCase):
         client = self.make_client()
         name = random_name(self)
         self.addCleanup(client.remove, name)
-        d = client.add(name, u"busybox:latest")
+        d = client.add(name, u"172.16.1.41:5000/busybox:latest")
         d.addCallback(lambda _: client.list())
 
         def got_list(units):
@@ -927,7 +927,7 @@ class GenericDockerClientTests(AsyncTestCase):
         docker_dir = FilePath(self.mktemp())
         docker_dir.makedirs()
         docker_dir.child(b"Dockerfile").setContent(
-            b'FROM busybox\n'
+            b'FROM 172.16.1.41:5000/busybox\n'
             b'CMD ["/bin/sh",  "-c", '
             b'"touch /mnt1/a; touch /mnt2/b"]'
         )
@@ -1129,7 +1129,7 @@ class GenericDockerClientTests(AsyncTestCase):
         external_port = find_free_port()[1]
         name = random_name(self)
         d = self.start_container(
-            name, image_name=u"busybox",
+            name, image_name=u"172.16.1.41:5000/busybox",
             # Pass in pvector since this likely to be what caller actually
             # passes in:
             command_line=pvector([u"sh", u"-c", u"""\
@@ -1193,7 +1193,7 @@ class DockerClientTests(AsyncTestCase):
         name = random_name(self)
         client = DockerClient()
         self.addCleanup(client.remove, name)
-        d = client.add(name, u"busybox:latest")
+        d = client.add(name, u"172.16.1.41:5000/busybox:latest")
         d.addCallback(lambda _: self.assertTrue(
             docker.inspect_container(u"flocker--" + name)))
         return d
@@ -1262,7 +1262,7 @@ class DockerClientTests(AsyncTestCase):
         name = random_name(self)
         client = DockerClient()
         self.addCleanup(client.remove, name)
-        d = client.add(name, u"busybox:latest")
+        d = client.add(name, u"172.16.1.41:5000/busybox:latest")
 
         response = make_response(500, "Simulated error")
 
@@ -1324,7 +1324,7 @@ class NamespacedDockerClientTests(GenericDockerClientTests):
         name = random_name(self)
 
         self.addCleanup(client.remove, name)
-        d = client.add(name, u"busybox:latest")
+        d = client.add(name, u"172.16.1.41:5000/busybox:latest")
         d.addCallback(lambda _: client2.list())
         d.addCallback(self.assertEqual, set())
         return d

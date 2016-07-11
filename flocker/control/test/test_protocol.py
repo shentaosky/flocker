@@ -33,6 +33,8 @@ from twisted.application.internet import StreamServerEndpointService
 from twisted.internet.ssl import ClientContextFactory
 from twisted.internet.task import Clock
 
+from flocker.control._persistence import FileConfigurationStore
+
 from ...testtools import TestCase
 from ...testtools.amp import DelayedAMPClient, connected_amp_protocol
 
@@ -441,7 +443,7 @@ def build_control_amp_service(test, reactor=None):
     cluster_state.startService()
     test.addCleanup(cluster_state.stopService)
     persistence_service = ConfigurationPersistenceService(
-        reactor, FilePath(test.mktemp()))
+        reactor, FileConfigurationStore(FilePath(test.mktemp())))
     persistence_service.startService()
     test.addCleanup(persistence_service.stopService)
     return ControlAMPService(reactor, cluster_state, persistence_service,

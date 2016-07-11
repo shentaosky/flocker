@@ -288,7 +288,7 @@ class DeployerTests(AsyncTestCase):
 
     def _start_container_for_introspection(self, **kwargs):
         """
-        Configure and deploy a busybox container with the given options.
+        Configure and deploy a 172.16.1.41:5000/busybox container with the given options.
 
         :param **kwargs: Additional arguments to pass to
             ``Application.__init__``.
@@ -306,7 +306,7 @@ class DeployerTests(AsyncTestCase):
 
         application = Application(
             name=application_name,
-            image=DockerImage.from_string(u"busybox"),
+            image=DockerImage.from_string(u"172.16.1.41:5000/busybox"),
             **kwargs)
         desired_configuration = Deployment(nodes=[
             Node(uuid=deployer.node_uuid,
@@ -362,7 +362,7 @@ class DeployerTests(AsyncTestCase):
         the container.
         """
         EXPECTED_MEMORY_LIMIT = 100000000
-        image = DockerImage.from_string(u"openshift/busybox-http-app")
+        image = DockerImage.from_string(u"172.16.1.41:5000/openshift/busybox-http-app")
 
         application_name = random_name(self)
 
@@ -410,7 +410,7 @@ class DeployerTests(AsyncTestCase):
         """
         EXPECTED_CPU_SHARES = 512
 
-        image = DockerImage.from_string(u"openshift/busybox-http-app")
+        image = DockerImage.from_string(u"172.16.1.41:5000/openshift/busybox-http-app")
 
         application_name = random_name(self)
 

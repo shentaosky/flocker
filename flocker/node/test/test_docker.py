@@ -30,7 +30,7 @@ from ...control._model import RestartAlways, RestartNever, RestartOnFailure
 # Note we explicitly select the "latest" tag to avoid tripping over a Docker
 # 1.8.1 / Docker hub interaction that results in pulls failing. See
 # https://github.com/docker/docker/issues/15699
-ANY_IMAGE = u"openshift/busybox-http-app:latest"
+ANY_IMAGE = u"172.16.1.41:5000/openshift/busybox-http-app:latest"
 
 
 def make_idockerclient_tests(fixture):
@@ -57,7 +57,7 @@ def make_idockerclient_tests(fixture):
             """
             client = fixture(self)
             name = random_name(self)
-            d = client.add(name, u"busybox")
+            d = client.add(name, u"172.16.1.41:5000/busybox")
             d.addCallback(lambda _: client.remove(name))
             return d
 
@@ -68,10 +68,10 @@ def make_idockerclient_tests(fixture):
             client = fixture(self)
             name = random_name(self)
             self.addCleanup(client.remove, name)
-            d = client.add(name, u"busybox")
+            d = client.add(name, u"172.16.1.41:5000/busybox")
 
             def added(_):
-                return client.add(name, u"busybox")
+                return client.add(name, u"172.16.1.41:5000/busybox")
             d.addCallback(added)
             d = self.assertFailure(d, AlreadyExists)
             d.addCallback(lambda exc: self.assertEqual(exc.args[0], name))
@@ -91,7 +91,7 @@ def make_idockerclient_tests(fixture):
             """
             client = fixture(self)
             name = random_name(self)
-            d = client.add(name, u"busybox")
+            d = client.add(name, u"172.16.1.41:5000/busybox")
             d.addCallback(lambda _: client.remove(name))
             d.addCallback(lambda _: client.remove(name))
             return d
@@ -113,7 +113,7 @@ def make_idockerclient_tests(fixture):
             client = fixture(self)
             name = random_name(self)
             self.addCleanup(client.remove, name)
-            d = client.add(name, u"busybox")
+            d = client.add(name, u"172.16.1.41:5000/busybox")
 
             def added(_):
                 return client.exists(name)
@@ -284,7 +284,7 @@ def make_idockerclient_tests(fixture):
             client = fixture(self)
             name = random_name(self)
             self.addCleanup(client.remove, name)
-            d = client.add(name, u"busybox")
+            d = client.add(name, u"172.16.1.41:5000/busybox")
             d.addCallback(lambda _: client.list())
 
             def got_list(units):
@@ -302,7 +302,7 @@ def make_idockerclient_tests(fixture):
             name = random_name(self)
             self.addCleanup(client.remove, name)
             command_line = [u"nc", u"-l", u"-p", u"1234"]
-            d = client.add(name, u"busybox", command_line=command_line)
+            d = client.add(name, u"172.16.1.41:5000/busybox", command_line=command_line)
             d.addCallback(lambda _: client.list())
 
             def got_list(units):
@@ -321,7 +321,7 @@ def make_idockerclient_tests(fixture):
             client = fixture(self)
             name = random_name(self)
             self.addCleanup(client.remove, name)
-            d = client.add(name, u"busybox", restart_policy=restart_policy)
+            d = client.add(name, u"172.16.1.41:5000/busybox", restart_policy=restart_policy)
             d.addCallback(lambda _: client.list())
 
             def got_list(units):

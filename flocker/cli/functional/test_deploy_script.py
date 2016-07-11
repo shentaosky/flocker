@@ -23,7 +23,8 @@ from ...control import (
     FlockerConfiguration, model_from_configuration, NodeState)
 
 from ...control.httpapi import ConfigurationAPIUserV1
-from ...control._persistence import ConfigurationPersistenceService
+from ...control._persistence import ConfigurationPersistenceService, \
+    FileConfigurationStore
 from ...control._clusterstate import ClusterStateService
 from ...control.test.test_config import (
     COMPLEX_APPLICATION_YAML, COMPLEX_DEPLOYMENT_YAML)
@@ -53,7 +54,7 @@ class FlockerDeployTests(AsyncTestCase):
         ca_set.copy_to(self.certificate_path, user=True)
 
         self.persistence_service = ConfigurationPersistenceService(
-            reactor, FilePath(self.mktemp()))
+            reactor, FileConfigurationStore(FilePath(self.mktemp())))
         self.persistence_service.startService()
         self.cluster_state_service = ClusterStateService(reactor)
         self.cluster_state_service.startService()

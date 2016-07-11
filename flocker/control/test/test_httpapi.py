@@ -42,7 +42,8 @@ from ..httpapi import (
     api_dataset_from_dataset_and_node, container_configuration_response,
     IF_MATCHES_HEADER,
 )
-from .._persistence import ConfigurationPersistenceService
+from .._persistence import ConfigurationPersistenceService, \
+    FileConfigurationStore
 from .._clusterstate import ClusterStateService
 from .._config import (
     FlockerConfiguration, FigConfiguration, model_from_configuration)
@@ -68,7 +69,7 @@ class APITestsMixin(APIAssertionsMixin):
         Create initial objects for the ``ConfigurationAPIUserV1``.
         """
         self.persistence_service = ConfigurationPersistenceService(
-            reactor, FilePath(self.mktemp()))
+            reactor, FileConfigurationStore(FilePath(self.mktemp())))
         self.persistence_service.startService()
         self.cluster_state_service = ClusterStateService(Clock())
         self.cluster_state_service.startService()
@@ -2692,7 +2693,8 @@ class CreateAPIServiceTests(TestCase):
         reactor = MemoryReactor()
         endpoint = TCP4ServerEndpoint(reactor, 6789)
         verifyObject(IService, create_api_service(
-            ConfigurationPersistenceService(reactor, FilePath(self.mktemp())),
+            ConfigurationPersistenceService(reactor, FileConfigurationStore(
+                FilePath(self.mktemp()))),
             ClusterStateService(reactor), endpoint, ClientContextFactory()))
 
 
