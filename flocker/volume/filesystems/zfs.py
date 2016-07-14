@@ -47,6 +47,8 @@ class CommandFailed(Exception):
 class BadArguments(Exception):
     """The ``zfs`` command was called with incorrect arguments."""
 
+class NoSuchStorageType(Exception):
+    """No such storage type."""
 
 class _AccumulatingProtocol(Protocol):
     """
@@ -530,21 +532,13 @@ class StoragePoolsService(Service):
             sys.stderr.write("at least one storage pool should be config\n")
             sys.exit(1)
 
-        def select_default_pool(pools):
-            for pooltype in [StorageType.BRONZE, StorageType.SILVER, StorageType.GOLD]:
-                if pools.has_key(pooltype):
-                    return pools.get(pooltype)
-
-        self._default_pool = select_default_pool(self._pools)
-
-    # TODO: if new pool is added, default storage poll might changed, http://172.16.1.41:10080/flocker/flocker_image_build/issues/10
     def get_pool(self, volume):
         if self._pools.has_key(volume.get_storagetype()):
             return self._pools.get(volume.get_storagetype())
-        warning = b"cannot get pool for type %s  volume %s, use default pool %s" % (volume.get_storagetype(), volume.name.to_bytes, self._default_pool)
+        warning = b"cannot get pool for type %s volume %s" % (volume.get_storagetype(), volume.name.to_bytes)
         message = ZFS_CONFIG_LOG(message=warning)
         message.write(self.logger)
-        return self._default_pool
+        raise NoSuchStorageType
 
     def create(self, volume):
         return self.get_pool(volume).create(volume)
