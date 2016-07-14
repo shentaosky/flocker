@@ -1037,7 +1037,7 @@ def _remove_dataset_fields(content):
 
 def task_configure_flocker_agent(
     control_node, dataset_backend, dataset_backend_configuration,
-    logging_config=None,
+    public_ip=None, logging_config=None,
 ):
     """
     Configure the flocker agents by writing out the configuration file.
@@ -1063,6 +1063,8 @@ def task_configure_flocker_agent(
         },
         "dataset": dataset_backend_configuration,
     }
+    if public_ip is not None:
+        content['hostname'] = public_ip
     if logging_config is not None:
         content['logging'] = logging_config
 
@@ -1555,6 +1557,7 @@ def configure_cluster(
                             dataset_backend_configuration=(
                                 dataset_backend_configuration
                             ),
+                            public_ip=node.address if node._node.driver.name == 'Amazon EC2' else None,
                             logging_config=logging_config,
                         ),
                         task_enable_docker_plugin(node.distribution),
