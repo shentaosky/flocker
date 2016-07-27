@@ -17,6 +17,7 @@ import json
 import ssl
 
 from docker.tls import TLSConfig
+from twisted.internet.defer import succeed
 
 from twisted.web.http import OK, CREATED
 from twisted.python.filepath import FilePath
@@ -37,7 +38,7 @@ from ..control import (
 )
 
 from ..common import gather_deferreds, loop_until, timeout
-from ..common.runner import download_file, run_ssh
+from ..common.runner import download_file, run_ssh, run_ssh_with_port
 
 from ..control.httpapi import REST_API_PORT
 from ..ca import treq_with_authentication, UserCredential
@@ -328,6 +329,7 @@ class Node(PClass):
     public_address = field(type=bytes)
     reported_hostname = field(type=bytes)
     uuid = field(type=unicode)
+    node_id = field(type=unicode, mandatory=False, initial=u"")
 
     def run_as_root(self, args, handle_stdout=None, handle_stderr=None):
         """
@@ -342,6 +344,44 @@ class Node(PClass):
         :return Deferred: Deferred that fires when the process is ended.
         """
         return run_ssh(reactor, "root", self.public_address, args,
+                       handle_stdout=handle_stdout,
+                       handle_stderr=handle_stderr)
+
+    def get_node_id(self):
+        """
+        get node id by from /etc/flocker/volume.json
+
+        :return
+        """
+        if self.node_id == u"":
+            d = self.run_ssh_with_port(['cat', '/etc/flocker/voluem.json'])
+
+            def get_id(_res):
+                config = json.loads(_res)
+                return config[b'uuid']
+            return d.addCallback(get_id)
+        return succeed(self.node_id)
+
+    def check_dataset(self, id, storage_type):
+        d = self.get_node_id()
+        d.addCallback(lambda ignore:
+                      self.run_in_flocker_container_as_root([b'flocker-volume',
+                                                             b'--config=/etc/flocker/volume.json',
+                                                             b'find_volumes',
+                                                             b'default.{}'.format(id),
+                                                             storage_type]))
+
+        def check_node_id(line):
+            res = line.split('\t')
+            return res[1] == id
+        return d.addCallback(check_node_id)
+
+
+    def run_in_flocker_container_as_root(self, args, handle_stdout=None, handle_stderr=None):
+        """
+        Run a command in flocker container, which use ssh port 2022
+        """
+        return run_ssh_with_port(reactor, "root", self.public_address, 2022, args,
                        handle_stdout=handle_stdout,
                        handle_stderr=handle_stderr)
 
@@ -509,6 +549,31 @@ class Cluster(PClass):
         waiting = loop_until(reactor, deleted)
         waiting.addCallback(lambda _: deleted_dataset)
         return waiting
+
+    def get_datasetid_by_name(self, name):
+        """
+        Retrive dataset_id by name in metadata, and this dataset is not yet deleted:
+
+        :param name: flocker dataset name in metadata
+
+        :return id: dataset if
+        """
+        request = self.client.list_datasets_configuration()
+        return request.addCallback(lambda datasets:
+                            [dataset for dataset in datasets
+                                if dataset.metadata['name'] == name])
+
+    def get_dataset_by_id(self, id):
+        """
+        Get flocker dataset by id
+
+        :param id: flocker dataset id
+
+        :return Dataset: flocker dataset for this id
+        """
+        request = self.client.list_datasets_configuration
+        return request.addCallback(lambda datasets: [dataset for dataset in datasets
+                                              if dataset.dataset_id == id])
 
     @log_method
     def wait_for_dataset(self, expected_dataset):
@@ -693,7 +758,7 @@ class Cluster(PClass):
         return request
 
     @log_method
-    def clean_nodes(self, remove_foreign_containers=True):
+    def clean_nodes(self, remove_flocker_containers=False, remove_foreign_containers=True):
         """
         Clean containers and datasets via the API.
 
@@ -768,7 +833,7 @@ class Cluster(PClass):
                 lambda item: self.client.delete_dataset(item.dataset_id),
             )
             return timeout(
-                reactor, cleaning_datasets, 60,
+                reactor, cleaning_datasets, 120,
                 Exception("Timed out cleaning up datasets"),
             )
 
@@ -792,7 +857,8 @@ class Cluster(PClass):
                 )
 
         d = DeferredContext(cleanup_leases())
-        d.addCallback(cleanup_flocker_containers)
+        if remove_flocker_containers:
+            d.addCallback(cleanup_flocker_containers)
         if remove_foreign_containers:
             d.addCallback(cleanup_all_containers)
         d.addCallback(cleanup_datasets)
