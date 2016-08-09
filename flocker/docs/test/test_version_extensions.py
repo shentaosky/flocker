@@ -36,5 +36,5 @@ class VersionExtensionsTest(TestCase):
             dst_dir.path,      # directory containing build files
             source_file.path])  # source file to process
         expected = 'PRE-{}-POST'.format(get_installable_version(version))
-        content = temp_dir.child('contents.html').getContent()
+        content = dst_dir.child('contents.html').getContent()
         self.assertIn(expected, content)
