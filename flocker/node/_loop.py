@@ -485,17 +485,9 @@ class ConvergenceLoop(object):
                     else:
                         raise KeyError
 
-            return NodeLocalState(
-                node_state=NodeState(
-                    uuid=node_state.uuid,
-                    hostname=node_state.hostname,
-                    applications=node_state.applications,
-                    manifestations=manifestations,
-                    paths=manifestation_paths,
-                    devices=node_state.devices,
-                    pool_status=node_state.pool_status,
-                )
-            )
+            # TODO : report non-primary datasets
+            local_state = local_state.transform(("node_state", "manifestations"), manifestations)
+            return local_state.transform(("node_state", "paths"), manifestation_paths)
 
         def got_local_state(local_state):
             control_service_shared_local_state = get_primary_manifestions(local_state)
