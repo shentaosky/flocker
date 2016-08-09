@@ -209,6 +209,34 @@ def run_ssh(reactor, username, host, command, **kwargs):
     )
 
 
+def run_ssh_with_port(reactor, username, host, port, command, **kwargs):
+    """
+    Run a process on a remote server using the locally installed ``ssh``
+    command and kill it if the reactor stops.
+
+    :param reactor: Reactor to use.
+    :param username: The username to use when logging into the remote server.
+    :param host: The hostname or IP address of the remote server.
+    :param port: The sshd port address of the remote server.
+    :param list command: The command to run remotely.
+    :param dict kwargs: Remaining keyword arguments to pass to ``run``.
+    :return Deferred: Deferred that fires when the process is ended.
+    """
+    ssh_command = [
+                      b"ssh",
+                  ] + SSH_OPTIONS + [
+                      b"-l", username,
+                      b"-p", port,
+                      host,
+                      ' '.join(map(shell_quote, command)),
+                  ]
+
+    return run(
+        reactor,
+        ssh_command,
+        **kwargs
+    )
+
 def download_file(reactor, username, host, remote_path, local_path):
     """
     Run the local ``scp`` command to download a single file from a remote host

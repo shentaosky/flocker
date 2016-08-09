@@ -1,6 +1,6 @@
 # Docker image that keeps a count of the number of times it has been run
 # in /data/count.
-FROM python:2.7-slim
+FROM 172.16.1.41:5000/python:2.7-slim
 VOLUME /data
 WORKDIR /data
 
