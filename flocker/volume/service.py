@@ -10,6 +10,7 @@ from __future__ import absolute_import
 import sys
 import json
 import stat
+import xattr
 from uuid import UUID, uuid4
 
 from pyrsistent import pmap
@@ -28,16 +29,18 @@ from twisted.internet.defer import fail, succeed
 from .filesystems.zfs import StoragePoolsService
 from ._model import VolumeSize
 from ..common.script import ICommandLineScript
-from flocker.control._model import StorageType
-
+from ..control._model import StorageType
 
 WAIT_FOR_VOLUME_INTERVAL = 0.1
+
 
 class CreateConfigurationError(Exception):
     """Create the configuration file failed."""
 
+
 class RemoteFilesystemError(Exception):
     """remote filesystem is not in healthy state."""
+
 
 @attributes(["namespace", "dataset_id"])
 class VolumeName(object):
@@ -303,7 +306,7 @@ class VolumeService(Service):
                 with fs.reader(snapshots) as contents:
                     for chunk in iter(lambda: contents.read(1024 * 1024), b""):
                         receiver.write(chunk)
-            return volume
+            return destination_volume
 
         pushing = matched_volumes.addCallback(got_snapshots)
         return pushing
@@ -352,7 +355,7 @@ class VolumeService(Service):
         volume = Volume(node_id=volume_node_id, name=volume_name, service=self, storagetype=storagetype)
         return volume.change_owner(self.node_id)
 
-    def handoff(self, volume, destination):
+    def handoff(self, volume, destination, serde):
         """
         Handoff a locally owned volume to a remote destination.
 
@@ -365,6 +368,8 @@ class VolumeService(Service):
         :param IRemoteVolumeManager destination: The remote volume manager
             to handoff to.
 
+        :param RemoteVolumeManagerSerde serde: serializer and deserializer used in handoff operation
+
         :return: ``Deferred`` that fires when the handoff has finished, or
             errbacks on error (specifcally with a ``ValueError`` if the
             volume is not locally owned).
@@ -372,8 +377,10 @@ class VolumeService(Service):
         pushing = maybeDeferred(self.push, volume, destination)
 
         def pushed(destination_volume):
+            write_handoff_log(volume, destination, destination_volume, serde)
             remote_uuid = destination.acquire(destination_volume)
-            return volume.change_owner(remote_uuid)
+            d = volume.change_owner(remote_uuid)
+            return d.addCallback(lambda changed_volume: clear_handoff_log(changed_volume))
         changing_owner = pushing.addCallback(pushed)
         return changing_owner
 
@@ -432,6 +439,14 @@ class Volume(object):
     def get_storagetype(self):
         return self.storagetype
 
+    def cmp_fields(self, other):
+        if type(other) is type(self):
+            for a in ["node_id", "name", "storagetype"]:
+                diff = cmp(getattr(other, a), getattr(self, a))
+                if diff != 0:
+                    return False
+        return True
+
     def __eq__(self, other):
         if self.__cmp__(other) != 0:
             return False
@@ -447,6 +462,107 @@ class Volume(object):
                 if diff != 0:
                     return diff
         return 0
+
+
+ZFS_HANDOFF_RENAME_DATASET_XATTR = b"user.transwarp.handoff.log.dataset"
+
+
+def serialize_volume(volume):
+    """
+    serialize volume into string, service is exclude
+    :param Volume volume: volume to serialize
+
+    :return unicode represet the serialize volume
+    """
+    return json.dumps({u'type': volume.storagetype.value, u'node_id': volume.node_id, u'name': volume.name.to_bytes()})
+
+
+def deserialize_volume(repr):
+    """
+    deserialize a string into volume
+    :param string repr: string representation of this volume
+
+    :return Volume  return a Volume with some filed empty, this is used when rename log operation
+    """
+    res = json.loads(repr)
+    storagetype = StorageType.lookupByValue(res[u'type'])
+    return Volume(node_id=res[u'node_id'], name=VolumeName.from_bytes(res[u'name']), service=None, storagetype=storagetype)
+
+
+def write_handoff_log(volume, destination, destination_volume, serde):
+    """
+    write rename log before destination.acquire
+    record log in xattr in format, ${destination}.${node_id}.default.${dataset_id}
+    1. recode serialized json to ZFS_HANDOFF_RENAME_DATASET_XATTR in xattr
+    2. remote acquire dataset on destination.
+    3. rename volume to destination node_id locally
+    4. clear log
+
+    :param Volume volume: local volume to be sent
+    :param Volume destination: destination volume to be sent
+    :param standard_node destination: destination node
+    :param Volume destination_volume: volume on destination_node
+    :param IRemoteVolumeManagerSerder serde: serializer and deserializer
+    """
+    path = volume.get_filesystem().get_path().path
+    value = serde.serialize(destination, destination_volume)
+    xattr.setxattr(path, ZFS_HANDOFF_RENAME_DATASET_XATTR, value)
+
+
+def read_handoff_log(volume):
+    """
+    read handoff log in ZFS_HANDOFF_RENAME_DATASET_XATTR
+    :param Volume volume: local volume to be sent
+    :return string: the log value
+    """
+    path = volume.get_filesystem().get_path().path
+    attrs = xattr.listxattr(path)
+    if ZFS_HANDOFF_RENAME_DATASET_XATTR in attrs:
+        return xattr.getxattr(path, ZFS_HANDOFF_RENAME_DATASET_XATTR)
+    return ""
+
+def clear_handoff_log(volume):
+    """
+    clear rename log after dataset has been rename to remote node_id
+    """
+    path = volume.get_filesystem().get_path().path
+    xattr.removexattr(path, ZFS_HANDOFF_RENAME_DATASET_XATTR, True)
+    return volume
+
+class HandoffDatasetLogException(Exception):
+    """
+    Handoff Dataset logs contains error
+    """
+
+
+def replay_handoff_log(volume, serde):
+    """
+    during startup, if rename failed, replay the log, to keep dataset consistency
+    """
+    path = volume.get_filesystem().get_path().path
+    attrs = xattr.listxattr(path)
+    if ZFS_HANDOFF_RENAME_DATASET_XATTR in attrs:
+        value = xattr.getxattr(path, ZFS_HANDOFF_RENAME_DATASET_XATTR)
+        destination, destination_volume = serde.deserialize(value)
+        matched_volumes = destination.find_volumes(destination_volume)
+
+        def got_volumes(matched_vols):
+            if len(matched_vols) != 1:
+                raise RemoteFilesystemError()
+            matched_volume = matched_vols[0]
+            # re-acquire remote volume
+            remote_node_id = matched_volume.node_id
+            # previous remote acquire has failed, otherwise it has succeed, so we can use the node_id of matched_volume
+            # as remote id
+            if destination_volume.node_id == remote_node_id:
+                remote_node_id = destination.acquire(destination_volume)
+            # rename local volume
+            if volume.node_id != remote_node_id:
+                return volume.change_owner(remote_node_id)
+            return volume
+        matched_volumes.addCallback(got_volumes)
+        return matched_volumes.addCallback(lambda changed_volume: clear_handoff_log(changed_volume))
+    return succeed([])
 
 
 @implementer(ICommandLineScript)

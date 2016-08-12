@@ -9,7 +9,7 @@ API. In some future iteration this will be replaced with an actual
 well-specified communication protocol between daemon processes using
 Twisted's event loop (https://clusterhq.atlassian.net/browse/FLOC-154).
 """
-
+import json
 from contextlib import contextmanager
 from io import BytesIO
 
@@ -23,14 +23,13 @@ from twisted.python.filepath import FilePath
 from ..common._ipc import ProcessNode
 from ..control._model import StorageType
 from .filesystems.zfs import Snapshot
-from .service import Volume, VolumeName
-
+from .service import Volume, VolumeName, deserialize_volume, serialize_volume
 
 # Path to SSH private key available on nodes and used to communicate
 # across nodes.
 # XXX duplicate of same information in flocker.cli:
 # https://clusterhq.atlassian.net/browse/FLOC-390
-from flocker.common._node_config import SSH_PRIVATE_KEY_PATH, DEFAULT_CONFIG_PATH
+from ..common._node_config import SSH_PRIVATE_KEY_PATH, DEFAULT_CONFIG_PATH
 
 
 def standard_node(hostname):
@@ -46,10 +45,53 @@ def standard_node(hostname):
     return ProcessNode.using_ssh(hostname, 2022, b"root", SSH_PRIVATE_KEY_PATH)
 
 
+class RemoteProcessNode(ProcessNode):
+    """
+    ProcessNode using ssh
+    """
+
+    def __init__(self, hostname, port=2022, username=b"root", private_key=SSH_PRIVATE_KEY_PATH):
+        """
+        :param hostname: remote hostname to be connected
+        """
+        self.hostname = hostname
+        self.port = port
+        self.initial_command_arguments = (
+            b"ssh",
+            b"-q",  # suppress warnings
+            b"-i", private_key.path,
+            b"-l", username,
+            # We're ok with unknown hosts; we'll be switching away from
+            # SSH by the time Flocker is production-ready and security is
+            # a concern.
+            b"-o", b"StrictHostKeyChecking=no",
+            # The tests hang if ControlMaster is set, since OpenSSH won't
+            # ever close the connection to the test server.
+            b"-o", b"ControlMaster=no",
+            # Some systems (notably Ubuntu) enable GSSAPI authentication which
+            # involves a slow DNS operation before failing and moving on to a
+            # working mechanism.  The expectation is that key-based auth will
+            # be in use so just jump straight to that.  An alternate solution,
+            # explicitly disabling GSSAPI, has cross-version platform and
+            # cross-version difficulties (the options aren't always recognized
+            # and result in an immediate failure).  As mentioned above, we'll
+            # switch away from SSH soon.
+            b"-o", b"PreferredAuthentications=publickey",
+            b"-p", b"%d" % (port,), hostname)
+        ProcessNode.__init__(self, initial_command_arguments=self.initial_command_arguments)
+
+    def run(self, remote_command):
+        return ProcessNode.run(self, remote_command)
+
+    def get_output(self, remote_command):
+        return ProcessNode.get_output(self, remote_command)
+
+
 class IRemoteVolumeManager(Interface):
     """
     A remote volume manager with which one can communicate somehow.
     """
+
     def snapshots(volume):
         """
         Retrieve a list of the snapshots which exist for the given volume.
@@ -104,7 +146,6 @@ class IRemoteVolumeManager(Interface):
         """
 
 
-
 @implementer(IRemoteVolumeManager)
 @with_cmp(["_destination", "_config_path"])
 class RemoteVolumeManager(object):
@@ -135,10 +176,10 @@ class RemoteVolumeManager(object):
              volume.get_storagetype().value]
         )
         return succeed([
-            Snapshot(name=name)
-            for name
-            in data.splitlines()
-        ])
+                           Snapshot(name=name)
+                           for name
+                           in data.splitlines()
+                           ])
 
     def receive(self, volume):
         return self._destination.run([b"flocker-volume",
@@ -191,6 +232,9 @@ class RemoteVolumeManager(object):
                                   service=None))
         return succeed(volumes)
 
+    @property
+    def destination(self):
+        return self._destination
 
 
 @implementer(IRemoteVolumeManager)
@@ -227,3 +271,59 @@ class LocalVolumeManager(object):
 
     def find_volumes(self, volume):
         return succeed([volume])
+
+
+class IRemoteVolumeManagerSerde(Interface):
+    """
+    Serializer and deserializer of RemoteVolumeManager
+    """
+
+    def serialize(self, destination, destination_volume):
+        """
+        Serialize destination and destination_volume into a string
+        :param RemoteVolumeManager destination: destination where volume is handoff to
+        :param Volume destination_volume: destination volume to be sent
+
+        :return unicode: unicode represent the serialized RemoteVolumeManager and Volume
+        """
+
+    def deserialize(self, repr):
+        """
+        Deserialize unicode representation into RemoteVolumeManager and Volume
+        :param unicode repr: unicode representation
+        :return return both RemoteVolumeManager and Volume
+        """
+
+
+@implementer(IRemoteVolumeManagerSerde)
+class RemoteVolumeManagerSerde(object):
+    """
+    Implementation of IRemoteVolumeManagerSerde
+    """
+
+    def serialize(self, destination, destination_volume):
+        return json.dumps({u'dest': destination._destination.hostname, u'volume': serialize_volume(destination_volume)})
+
+    def deserialize(self, repr):
+        value = json.loads(repr)
+        destination_volume = deserialize_volume(value[u'volume'])
+        return RemoteVolumeManager(RemoteProcessNode(value[u'dest'])), destination_volume
+
+
+@implementer(IRemoteVolumeManagerSerde)
+class LocalVolumeManagerSerde(object):
+    """
+    Implementation of IRemoteVolumeManagerSerde
+    """
+
+    def __init__(self):
+        self._volume_manager = None
+        self._volume = None
+
+    def serialize(self, destination, destination_volume):
+        self._volume_manager = destination
+        self._volume = destination_volume
+        return destination_volume.name.to_bytes()
+
+    def deserialize(self, repr):
+        return self._volume_manager, self._volume

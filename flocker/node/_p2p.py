@@ -24,7 +24,7 @@ from . import IStateChange, in_parallel, sequentially
 from ..control._model import (
     DatasetChanges, DatasetHandoff, NodeState, Manifestation, Dataset,
     ip_to_uuid, Application, AttachedVolume, DockerImage, DATASET_LAZY_CREATE, DATASET_LAZY_CREATE_PENDING)
-from ..volume._ipc import RemoteVolumeManager, standard_node
+from ..volume._ipc import RemoteVolumeManager, RemoteProcessNode, RemoteVolumeManagerSerde
 from ..volume._model import VolumeSize
 from ..volume.service import VolumeName
 
@@ -128,11 +128,13 @@ class HandoffDataset(object):
 
     def run(self, deployer):
         service = deployer.volume_service
-        destination = standard_node(self.hostname)
+        destination = RemoteProcessNode(hostname=self.hostname)
         return service.handoff(
             service.get(name=_to_volume_name(self.dataset.dataset_id),
                         storagetype=self.dataset.get_storagetype()),
-            RemoteVolumeManager(destination))
+            RemoteVolumeManager(destination),
+            RemoteVolumeManagerSerde()
+        )
 
 
 @implementer(IStateChange)
@@ -159,7 +161,7 @@ class PushDataset(object):
 
     def run(self, deployer):
         service = deployer.volume_service
-        destination = standard_node(self.hostname)
+        destination = RemoteProcessNode(hostname=self.hostname)
         return service.push(
             service.get(name=_to_volume_name(self.dataset.dataset_id),
                         storagetype=self.dataset.get_storagetype()),
