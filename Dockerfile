@@ -1,4 +1,4 @@
-FROM centos:7.2.1511
+FROM 172.16.1.41:5000/centos:7.2.1511
 
 MAINTAINER HuaichengZheng "huaicheng.zheng@transwarp.io"
 
