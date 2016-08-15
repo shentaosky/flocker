@@ -209,7 +209,7 @@ class FlockerPVCCreateTest(AsyncTestCase):
         d.addCallback(lambda ignore: self.addCleanup(k8s_cluster.delete_rc, rc2))
         return d.addCallback(lambda ignore: k8s_cluster.check_rc_provision(1, {"name": name2}))
 
-    @require_k8s_cluster(4)
+    @require_k8s_cluster(3)
     def test_bound_multi_pvcsets(self, k8s_cluster):
         """
         test bound of pvcset
