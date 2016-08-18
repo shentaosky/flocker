@@ -324,7 +324,7 @@ class K8SCluster(PClass):
             cmd.addCallback(lambda res: res[b'status'][b'phase'] == b"Bound")
             return cmd
 
-        pvc = loop_until(reactor, check_pvc_bound, repeat(1, 120))
+        pvc = loop_until(reactor, check_pvc_bound, repeat(1, 240))
 
         def get_pvc_name(ignore):
             cmd = self.kubectl_get(["get", "pvc", name, "-o", "json"])
@@ -388,7 +388,7 @@ class K8SCluster(PClass):
 
                 return d.addCallbacks(lambda result: True, not_existing)
 
-            return loop_until(reactor, _run_check, repeat(1, 120))
+            return loop_until(reactor, _run_check, repeat(1, 240))
 
         def check_on_nodes(dataset):
             for node in self.flocker_cluster.nodes:
@@ -518,6 +518,7 @@ def _get_test_k8s_cluster(_reactor, logger):
 
     # use label selector to find out flocker-control node
     def get_flocker_control_pod():
+
         kube_cmd = _kube_command(_reactor,
                                  "kubectl",
                                  ["--kubeconfig=%s" % config_path.path,
@@ -536,7 +537,7 @@ def _get_test_k8s_cluster(_reactor, logger):
             control_pod = output["items"][0]
             return bytes(control_pod["status"]["podIP"])
 
-        kube_cmd.addCallback(get_flocker_control_ip)
+        kube_cmd.addCallbacks(get_flocker_control_ip, lambda ignore: False)
         return kube_cmd
 
     flocker_control = loop_until(_reactor, get_flocker_control_pod)
