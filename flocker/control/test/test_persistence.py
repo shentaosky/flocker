@@ -24,15 +24,16 @@ from twisted.python.filepath import FilePath
 
 from pyrsistent import PClass, pset
 
-from ...testtools import AsyncTestCase, TestCase
-from .._persistence import (
+from flocker.testtools import AsyncTestCase, TestCase
+from flocker.control._persistence import (
     ConfigurationPersistenceService, wire_decode, wire_encode,
     _LOG_SAVE, _LOG_STARTUP, migrate_configuration,
     _CONFIG_VERSION, ConfigurationMigration, ConfigurationMigrationError,
     _LOG_UPGRADE, MissingMigrationError, update_leases, _LOG_EXPIRE,
     _LOG_UNCHANGED_DEPLOYMENT_NOT_SAVED, to_unserialized_json,
+    FileConfigurationStore
     )
-from .._model import (
+from flocker.control._model import (
     Deployment, Application, DockerImage, Node, Dataset, Manifestation,
     AttachedVolume, SERIALIZABLE_CLASSES, NodeState, Configuration,
     Port, Link, Leases, Lease,
@@ -66,6 +67,23 @@ V1_TEST_DEPLOYMENT_JSON = FilePath(__file__).sibling(
     'configurations').child(b"configuration_v1.json").getContent()
 
 
+def createConfigurationPersistentService(testcase, reactor, path=None):
+    """
+    Create a service to persist configuration.
+
+    :param testcase: An instance of the TestCase.
+    :param reactor: Reactor to use for thread pool.
+    :param FilePath path: Directory where desired deployment will be
+            persisted.
+
+    :return: Return an instance of Service.
+    """
+    if path == None:
+        path = FilePath(testcase.mktemp())
+    store = FileConfigurationStore(path)
+    return ConfigurationPersistenceService(reactor, store=store)
+
+
 class LeasesTests(AsyncTestCase):
     """
     Tests for ``LeaseService`` and ``update_leases``.
@@ -73,8 +91,8 @@ class LeasesTests(AsyncTestCase):
     def setUp(self):
         super(LeasesTests, self).setUp()
         self.clock = Clock()
-        self.persistence_service = ConfigurationPersistenceService(
-            self.clock, FilePath(self.mktemp()))
+        self.persistence_service = createConfigurationPersistentService(
+            self, self.clock, FilePath(self.mktemp()))
         self.persistence_service.startService()
         self.addCleanup(self.persistence_service.stopService)
 
@@ -185,7 +203,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
     """
     Tests for ``ConfigurationPersistenceService``.
     """
-    def service(self, path, logger=None):
+    def service(self, path=None, logger=None):
         """
         Start a service, schedule its stop.
 
@@ -194,7 +212,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
 
         :return: Started ``ConfigurationPersistenceService``.
         """
-        service = ConfigurationPersistenceService(reactor, path)
+        service = createConfigurationPersistentService(self, reactor, path)
         if logger is not None:
             self.patch(service, "logger", logger)
         service.startService()
@@ -206,7 +224,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         If no configuration was previously saved, starting a service results
         in an empty ``Deployment``.
         """
-        service = self.service(FilePath(self.mktemp()))
+        service = self.service()
         self.assertEqual(service.get(), Deployment(nodes=frozenset()))
 
     def test_directory_is_created(self):
@@ -214,7 +232,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         If a directory does not exist in given path, it is created.
         """
         path = FilePath(self.mktemp())
-        self.service(path)
+        self.service(path=path)
         self.assertTrue(path.isdir())
 
     def test_file_is_created(self):
@@ -222,7 +240,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         If no configuration file exists in the given path, it is created.
         """
         path = FilePath(self.mktemp())
-        self.service(path)
+        self.service(path=path)
         self.assertTrue(path.child(b"current_configuration.json").exists())
 
     @validate_logging(assertHasAction, _LOG_UPGRADE, succeeded=True,
@@ -276,7 +294,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         v1_config_file = path.child(b"current_configuration.v1.json")
         v1_config_file.setContent(V1_TEST_DEPLOYMENT_JSON)
         config_path = path.child(b"current_configuration.json")
-        self.service(path)
+        self.service(path=path)
         configuration = wire_decode(config_path.getContent())
         self.assertEqual(configuration.version, _CONFIG_VERSION)
 
@@ -292,7 +310,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         persisted_configuration = Configuration(
             version=_CONFIG_VERSION, deployment=TEST_DEPLOYMENT)
         config_path.setContent(wire_encode(persisted_configuration))
-        self.service(path)
+        self.service(path=path)
         loaded_configuration = wire_decode(config_path.getContent())
         self.assertEqual(loaded_configuration, persisted_configuration)
 
@@ -302,7 +320,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         """
         A configuration that was saved can subsequently retrieved.
         """
-        service = self.service(FilePath(self.mktemp()), logger)
+        service = self.service(logger=logger)
         logger.reset()
         d = service.save(TEST_DEPLOYMENT)
         d.addCallback(lambda _: service.get())
@@ -316,10 +334,8 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         A configuration that was saved can be loaded from a new service.
         """
         path = FilePath(self.mktemp())
-        service = ConfigurationPersistenceService(reactor, path)
-        service.startService()
+        service = self.service(path=path)
         d = service.save(TEST_DEPLOYMENT)
-        d.addCallback(lambda _: service.stopService())
 
         def retrieve_in_new_service(_):
             new_service = self.service(path, logger)
@@ -332,7 +348,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         Callbacks can be registered that are called every time there is a
         change saved.
         """
-        service = self.service(FilePath(self.mktemp()))
+        service = self.service()
         callbacks = []
         callbacks2 = []
         service.register(lambda: callbacks.append(1))
@@ -358,7 +374,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         """
         Failed callbacks don't prevent later callbacks from being called.
         """
-        service = self.service(FilePath(self.mktemp()), logger)
+        service = self.service(logger=logger)
         callbacks = []
         service.register(lambda: 1/0)
         service.register(lambda: callbacks.append(1))
@@ -375,7 +391,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         If the old deployment and the new deployment are equivalent, registered
         callbacks are not called.
         """
-        service = self.service(FilePath(self.mktemp()), logger)
+        service = self.service(logger=logger)
 
         state = []
 
@@ -404,7 +420,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         ``save`` returns a ``Deferred`` that fires with ``None`` when called
         with a deployment that is the same as the already-saved deployment.
         """
-        service = self.service(FilePath(self.mktemp()), None)
+        service = self.service()
 
         old_saving = service.save(TEST_DEPLOYMENT)
 
@@ -435,10 +451,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         """
         An empty configuration can be hashed.
         """
-        path = FilePath(self.mktemp())
-        service = ConfigurationPersistenceService(reactor, path)
-        service.startService()
-        self.addCleanup(service.stopService)
+        service = self.service()
 
         # Hash can be retrieved and passes sanity check:
         self.get_hash(service)
@@ -447,10 +460,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         """
         The configuration hash changes when a new version is saved.
         """
-        path = FilePath(self.mktemp())
-        service = ConfigurationPersistenceService(reactor, path)
-        service.startService()
-        self.addCleanup(service.stopService)
+        service = self.service()
         original = self.get_hash(service)
         d = service.save(TEST_DEPLOYMENT)
 
@@ -464,10 +474,7 @@ class ConfigurationPersistenceServiceTests(AsyncTestCase):
         """
         A configuration that was saved can be loaded from a new service.
         """
-        path = FilePath(self.mktemp())
-        service = ConfigurationPersistenceService(reactor, path)
-        service.startService()
-        self.addCleanup(service.stopService)
+        service = self.service()
         d = service.save(TEST_DEPLOYMENT)
 
         def saved(_):

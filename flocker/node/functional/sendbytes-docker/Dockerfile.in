@@ -1,4 +1,4 @@
-FROM busybox
+FROM 172.16.1.41:5000/busybox
 MAINTAINER ClusterHQ <support@clusterhq.com>
 ADD . /
 # If installed via wheel, the installed file will not have +x set.

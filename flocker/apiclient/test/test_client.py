@@ -40,7 +40,8 @@ from ...ca.testtools import get_credential_sets
 from ...testtools import (
     find_free_port, random_name, CustomException, AsyncTestCase, TestCase,
 )
-from ...control._persistence import ConfigurationPersistenceService
+from ...control._persistence import ConfigurationPersistenceService, \
+    FileConfigurationStore
 from ...control._clusterstate import ClusterStateService
 from ...control.httpapi import create_api_service
 from ...control import (
@@ -717,7 +718,7 @@ class FlockerClientTests(make_clientv1_tests()):
         clock = Clock()
         _, self.port = find_free_port()
         self.persistence_service = ConfigurationPersistenceService(
-            clock, FilePath(self.mktemp()))
+            clock, FileConfigurationStore(FilePath(self.mktemp())))
         self.persistence_service.startService()
         self.cluster_state_service = ClusterStateService(reactor)
         self.cluster_state_service.startService()

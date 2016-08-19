@@ -16,7 +16,8 @@ from twisted.application.service import MultiService
 from twisted.internet.ssl import Certificate
 
 from .httpapi import create_api_service, REST_API_PORT
-from ._persistence import ConfigurationPersistenceService
+from ._persistence import ConfigurationPersistenceService, FileConfigurationStore, \
+    EtcdConfigurationStore
 from ._clusterstate import ClusterStateService
 from ..common.script import (
     flocker_standard_options, FlockerScriptRunner, main_for_service)
@@ -40,6 +41,15 @@ class ControlOptions(Options):
          "The external API port to listen on."],
         ["agent-port", "a", 'tcp:4524',
          "The port convergence agents will connect to."],
+        ["config-store-provider", "s", 'local',
+         "The configuration decides a destination of store in local or etcd"],
+        ["etcd-store-ip", "i", "172.18.8.100:4001,172.18.8.101:4001,"
+                               "172.18.8.102:4001",
+         "The IP where data will be persisted."],
+        ["etcd-store-port", "o", None,
+         "The port where data will be persisted."],
+        ["etcd-store-dir", "r", FilePath(b"/transwarp.io/storage/flocker"),
+         "The directory where data will be persisted.", FilePath],
         ["certificates-directory", "c", DEFAULT_CERTIFICATE_PATH,
          ("Absolute path to directory containing the cluster "
           "root certificate (cluster.crt) and control service certificate "
@@ -62,8 +72,16 @@ class ControlScript(object):
             certificates_path, b"service")
 
         top_service = MultiService()
-        persistence = ConfigurationPersistenceService(
-            reactor, options["data-path"])
+        if options["config-store-provider"] == 'local':
+            store = FileConfigurationStore(options["data-path"])
+        else:
+            store = EtcdConfigurationStore(
+                options["etcd-store-ip"], options["etcd-store-port"],
+                options["etcd-store-dir"])
+
+        persistence = ConfigurationPersistenceService(reactor, store)
+        # persistence = ConfigurationPersistenceService(
+        #     reactor, options["data-path"])
         persistence.setServiceParent(top_service)
         cluster_state = ClusterStateService(reactor)
         cluster_state.setServiceParent(top_service)
