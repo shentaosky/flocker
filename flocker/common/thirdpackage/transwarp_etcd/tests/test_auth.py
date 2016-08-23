@@ -12,11 +12,12 @@ from ..client import Client
 from ..common import EtcdKeyNotFound, EtcdInsufficientPermissions, EtcdException
 from integration import helpers
 
+
 class TestEtcdAuthBase(EtcdIntegrationTest):
     cl_size = 1
 
-    @skipUnless(which(b"etcd"), b"etcd" + " not installed")
-    @skipUnless(platform.isLinux(), "etcd only works on Linux")
+    @skipUnless(which(b"docker-compose"), b"docker-compose" + " not installed")
+    @skipUnless(platform.isLinux(), "docker-compose only works on Linux")
     def setUp(self):
         # Sets up the root user, toggles auth
         program = self._get_exe()
@@ -27,13 +28,16 @@ class TestEtcdAuthBase(EtcdIntegrationTest):
             port_range_start=6001,
             internal_port_range_start=8001)
         self.processHelper.run(number=self.cl_size)
-        self.client = Client(port=6001)
+        self.ipaddr = self.processHelper.schema + self.processHelper.ipaddr
+        self.ip = self.processHelper.ipaddr
+        self.client = Client(host=self.ip, port=6001)
+
         u = EtcdUser(self.client, 'root')
         u.password = 'testpass'
         u.write()
-        self.client = Client(port=6001, username='root',
+        self.client = Client(host=self.ip, port=6001, username='root',
                                 password='testpass')
-        self.unauth_client = Client(port=6001)
+        self.unauth_client = Client(host=self.ip, port=6001)
         a = Auth(self.client)
         a.active = True
 
@@ -51,7 +55,6 @@ class TestEtcdAuthBase(EtcdIntegrationTest):
         a = Auth(self.client)
         a.active = False
         self.processHelper.stop()
-        shutil.rmtree(self.directory)
 
 
 class EtcdUserTest(TestEtcdAuthBase):
@@ -83,7 +86,7 @@ class EtcdUserTest(TestEtcdAuthBase):
         self.assertRaises(EtcdInsufficientPermissions, u.read)
 
         # Generic errors are caught
-        c = Client(port=9999)
+        c = Client(host=self.ip, port=9999)
         u = EtcdUser(c, 'root')
         self.assertRaises(EtcdException, u.read)
 
@@ -103,7 +106,7 @@ class EtcdUserTest(TestEtcdAuthBase):
         u.read()
         # Verify we can log in as this user and access the auth(it has the
         # root role)
-        cl = Client(port=6001, username='test_user',
+        cl = Client(host=self.ip, port=6001, username='test_user',
                          password='123456')
         ul = EtcdUser(cl, 'root')
         try:
