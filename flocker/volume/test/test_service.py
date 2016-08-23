@@ -23,14 +23,14 @@ from twisted.python.filepath import FilePath, Permissions
 from ..service import (
     VolumeService, CreateConfigurationError, Volume, VolumeName,
     VolumeScript, ICommandLineVolumeScript,
-    VolumeSize,
-    )
+    VolumeSize, write_handoff_log, clear_handoff_log, replay_handoff_log,
+    read_handoff_log)
 from ..script import VolumeOptions
 
 from ..filesystems.memory import FilesystemStoragePool
-from ..filesystems.zfs import StoragePool
-from .._ipc import RemoteVolumeManager, LocalVolumeManager
-from ..testtools import create_volume_service
+from .._ipc import RemoteVolumeManager, LocalVolumeManager, LocalVolumeManagerSerde, RemoteVolumeManagerSerde, \
+    RemoteProcessNode
+from ..testtools import create_volume_service, create_realistic_servicepair
 from ...common import FakeNode
 from ...testtools import (
     skip_on_broken_permissions, attempt_effective_uid, make_with_init_tests,
@@ -40,7 +40,7 @@ from ...testtools import (
 
 
 class VolumeNameInitializationTests(make_with_init_tests(
-        VolumeName, {"namespace": u"x", "dataset_id": u"y"})):
+    VolumeName, {"namespace": u"x", "dataset_id": u"y"})):
     """
     Tests for :class:`VolumeName` initialization.
     """
@@ -50,6 +50,7 @@ class VolumeNameTests(TestCase):
     """
     Tests for :class:`VolumeName`.
     """
+
     def test_equality(self):
         """
         ``VolumeName`` with same arguments are equal.
@@ -92,7 +93,7 @@ class VolumeNameTests(TestCase):
 
 
 class VolumeSizeInitializationTests(make_with_init_tests(
-        VolumeSize, {"maximum_size": 12345678})):
+    VolumeSize, {"maximum_size": 12345678})):
     """
     Tests for :class:`VolumeSize` initialization.
     """
@@ -102,6 +103,7 @@ class VolumeSizeTests(TestCase):
     """
     Tests for :class:`VolumeSize`.
     """
+
     def test_immutable(self):
         """
         Attributes of :class:`VolumeSize` instances cannot be set.
@@ -114,6 +116,7 @@ class VolumeSizeComparisonTests(TestCase):
     """
     Tests for :class:`VolumeSize` equality.
     """
+
     def test_self(self):
         """
         A :class:`VolumeSize` instance compares as equal to itself.
@@ -144,6 +147,7 @@ class VolumeServiceStartupTests(TestCase):
     """
     Tests for :class:`VolumeService` startup.
     """
+
     def test_interface(self):
         """:class:`VolumeService` implements :class:`IService`."""
         self.assertTrue(verifyObject(IService,
@@ -522,6 +526,7 @@ class VolumeServiceAPITests(AsyncTestCase):
             # generator produces bad failure messages.
             volumes = list(volumes)
             self.assertIn(new_volume, volumes)
+
         d.addCallback(got_volumes)
         return d
 
@@ -656,7 +661,7 @@ class VolumeServiceAPITests(AsyncTestCase):
         remote_volume = Volume(node_id=u"remote", name=MY_VOLUME,
                                service=service)
 
-        self.failureResultOf(service.handoff(remote_volume, None),
+        self.failureResultOf(service.handoff(remote_volume, None, LocalVolumeManagerSerde()),
                              ValueError)
 
     def test_handoff_destination_acquires(self):
@@ -673,7 +678,8 @@ class VolumeServiceAPITests(AsyncTestCase):
             volume.get_filesystem().get_path().child(b"afile").setContent(
                 b"exists")
             return origin_service.handoff(
-                volume, LocalVolumeManager(destination_service))
+                volume, LocalVolumeManager(destination_service), LocalVolumeManagerSerde())
+
         created.addCallback(got_volume)
 
         def handed_off(_):
@@ -682,6 +688,7 @@ class VolumeServiceAPITests(AsyncTestCase):
                                      service=destination_service)
             root = expected_volume.get_filesystem().get_path()
             self.assertEqual(root.child(b"afile").getContent(), b"exists")
+
         created.addCallback(handed_off)
         return created
 
@@ -697,7 +704,8 @@ class VolumeServiceAPITests(AsyncTestCase):
 
         def got_volume(volume):
             return origin_service.handoff(
-                volume, LocalVolumeManager(destination_service))
+                volume, LocalVolumeManager(destination_service), LocalVolumeManagerSerde())
+
         created.addCallback(got_volume)
         created.addCallback(lambda _: origin_service.enumerate())
 
@@ -706,6 +714,7 @@ class VolumeServiceAPITests(AsyncTestCase):
                                      name=MY_VOLUME,
                                      service=origin_service)
             self.assertEqual(list(volumes), [expected_volume])
+
         created.addCallback(got_origin_volumes)
         return created
 
@@ -723,7 +732,8 @@ class VolumeServiceAPITests(AsyncTestCase):
             volume.get_filesystem().get_path().child(b"afile").setContent(
                 b"exists")
             return origin_service.handoff(
-                volume, LocalVolumeManager(destination_service))
+                volume, LocalVolumeManager(destination_service), LocalVolumeManagerSerde())
+
         created.addCallback(got_volume)
 
         def handed_off(volumes):
@@ -732,21 +742,145 @@ class VolumeServiceAPITests(AsyncTestCase):
                                      service=origin_service)
             root = expected_volume.get_filesystem().get_path()
             self.assertEqual(root.child(b"afile").getContent(), b"exists")
+
         created.addCallback(handed_off)
         return created
 
+    def test_hadnoff_rename_log_serilization(self):
+        """
+        Test serialize and deserialize of handoff rename log
+        """
+        pair = create_realistic_servicepair(self)
+
+        src = pair.from_service.create(pair.from_service.get(MY_VOLUME))
+
+        def created_volume(src_volume):
+            expect_dst = pair.to_service.get(MY_VOLUME)
+            expect_remote = RemoteVolumeManager(RemoteProcessNode("test.local"))
+            serde = RemoteVolumeManagerSerde()
+
+            write_handoff_log(src_volume, expect_remote, expect_dst, serde)
+            value = read_handoff_log(src_volume)
+            self.assertEqual(True, value != "")
+            actual_remote, actual_dst = serde.deserialize(value)
+            self.assertEqual(actual_remote, expect_remote)
+            self.assertEqual(True, actual_dst.cmp_fields(expect_dst))
+            return
+
+        src.addCallback(created_volume)
+        return src
+
+    def test_handoff_writelog(self):
+        """
+        Test write and clear of handoff log
+        """
+        pair = create_realistic_servicepair(self)
+
+        src = pair.from_service.create(pair.from_service.get(MY_VOLUME))
+
+        def create_dst_volume(src_volume):
+            dst = pair.to_service.get(MY_VOLUME)
+            serde = LocalVolumeManagerSerde()
+
+            write_handoff_log(src_volume, pair.remote, dst, serde)
+            value = read_handoff_log(src_volume)
+            self.assertEqual(True, value != "")
+            clear_handoff_log(src_volume)
+            value = read_handoff_log(src_volume)
+            self.assertEqual(True, value == "")
+
+        src.addCallback(create_dst_volume)
+        return src
+
+    def test_handoff_remote_rename_replay(self):
+        """
+        Test when remote rename failed, replay log will fix the problem
+        """
+        pair = create_realistic_servicepair(self)
+        src = pair.from_service.create(pair.from_service.get(MY_VOLUME))
+        expected_volume = pair.to_service.get(MY_VOLUME)
+
+        def created_volume(src_volume):
+            dst = pair.to_service.create(expected_volume)
+            serde = LocalVolumeManagerSerde()
+
+            dst.addCallback(lambda dst_volume: dst_volume.change_owner(src_volume.node_id))
+
+            def created_dst_volume(dst_volume):
+                write_handoff_log(src_volume, pair.remote, dst_volume, serde)
+                return replay_handoff_log(src_volume, serde)
+            return dst.addCallback(created_dst_volume)
+        src.addCallback(created_volume)
+
+        def validate_result(changed_volume):
+            self.assertEqual(True, changed_volume.cmp_fields(expected_volume))
+
+        return src.addCallback(validate_result)
+
+    def test_handoff_local_rename_replay(self):
+        """
+        Test when local rename failed, and replay log to fix the problem
+        """
+        pair = create_realistic_servicepair(self)
+        src = pair.from_service.create(pair.from_service.get(MY_VOLUME))
+        expected_volume = pair.to_service.get(MY_VOLUME)
+
+        def created_volume(src_volume):
+            dst = pair.to_service.create(expected_volume)
+            serde = LocalVolumeManagerSerde()
+
+            def created_dst_volume(dst_volume):
+                pre_dst_volume = Volume(node_id=uuid4(), name=dst_volume.name, service=None, storagetype=dst_volume.storagetype)
+                write_handoff_log(src_volume, pair.remote, pre_dst_volume, serde)
+                return replay_handoff_log(src_volume, serde)
+            return dst.addCallback(created_dst_volume)
+        src.addCallback(created_volume)
+
+        def validate_result(changed_volume):
+            self.assertEqual(True, changed_volume.cmp_fields(expected_volume))
+            self.assertEqual("", read_handoff_log(changed_volume))
+
+        return src.addCallback(validate_result)
+
+    def test_handoff_clear_log_replay(self):
+        """
+        Test when clear log failed, and replay log to fix the problem
+        """
+        pair = create_realistic_servicepair(self)
+        src = pair.from_service.create(pair.from_service.get(MY_VOLUME))
+        expected_volume = pair.to_service.get(MY_VOLUME)
+
+        src.addCallback(lambda vol: vol.change_owner(expected_volume.node_id))
+
+        def created_volume(src_volume):
+            dst = pair.to_service.create(expected_volume)
+            serde = LocalVolumeManagerSerde()
+
+            def created_dst_volume(dst_volume):
+                pre_dst_volume = Volume(node_id=uuid4(), name=dst_volume.name, service=None, storagetype=dst_volume.storagetype)
+                write_handoff_log(src_volume, pair.remote, pre_dst_volume, serde)
+                return replay_handoff_log(src_volume, serde)
+            return dst.addCallback(created_dst_volume)
+        src.addCallback(created_volume)
+
+        def validate_result(changed_volume):
+            self.assertEqual(True, changed_volume.cmp_fields(expected_volume))
+            self.assertEqual("", read_handoff_log(changed_volume))
+
+        return src.addCallback(validate_result)
+
 
 class VolumeInitializationTests(make_with_init_tests(
-        Volume,
-        kwargs={
-            "node_id": u"abcd",
-            "name": VolumeName(namespace=u"xyz", dataset_id=u"123"),
-            "service": object(),
-            "size": VolumeSize(maximum_size=54321),
-        },
-        expected_defaults={
-            "size": VolumeSize(maximum_size=None),
-        })):
+    Volume,
+    kwargs={
+        "node_id": u"abcd",
+        "name": VolumeName(namespace=u"xyz", dataset_id=u"123"),
+        "service": object(),
+        "size": VolumeSize(maximum_size=54321),
+    },
+    expected_defaults={
+        "size": VolumeSize(maximum_size=None),
+    })):
     """
     Tests for :class:`Volume` initialization.
     """
@@ -846,6 +980,7 @@ class VolumeOwnerChangeTests(TestCase):
     """
     Tests for ``Volume.change_owner``.
     """
+
     def setUp(self):
         """
         Create a ``VolumeService`` pointing at a new pool.
@@ -903,6 +1038,7 @@ class VolumeScriptCreateVolumeServiceTests(TestCase):
     """
     Tests for ``VolumeScript._create_volume_service``.
     """
+
     @skip_on_broken_permissions
     def test_exit(self):
         """
@@ -952,32 +1088,32 @@ class VolumeScriptCreateVolumeServiceTests(TestCase):
                 config.path).encode("ascii"),
             stderr.getvalue())
 
-#    def test_options(self):
-#        """
-#        When successful, ``VolumeScript._create_volume_service`` returns a
-#        running ``VolumeService`` initialized with the pool, mountpoint, and
-#        configuration path given by the ``options`` argument.
-#        """
-#        pool = b"some-pool"
-#        mountpoint = FilePath(self.mktemp())
-#        config = FilePath(self.mktemp())
-#
-#        options = VolumeOptions()
-#        options.parseOptions([
-#            b"--config", config.path,
-#            b"--pool", pool,
-#            b"--mountpoint", mountpoint.path,
-#        ])
-#
-#        stderr = StringIO()
-#        reactor = object()
-#
-#        service = VolumeScript._create_volume_service(stderr, reactor, options)
-#        self.assertEqual(
-#            (True, config, StoragePool(reactor, pool, mountpoint)),
-#            (service.running, service._config_path, service.pool)
-#        )
-#
+    #    def test_options(self):
+    #        """
+    #        When successful, ``VolumeScript._create_volume_service`` returns a
+    #        running ``VolumeService`` initialized with the pool, mountpoint, and
+    #        configuration path given by the ``options`` argument.
+    #        """
+    #        pool = b"some-pool"
+    #        mountpoint = FilePath(self.mktemp())
+    #        config = FilePath(self.mktemp())
+    #
+    #        options = VolumeOptions()
+    #        options.parseOptions([
+    #            b"--config", config.path,
+    #            b"--pool", pool,
+    #            b"--mountpoint", mountpoint.path,
+    #        ])
+    #
+    #        stderr = StringIO()
+    #        reactor = object()
+    #
+    #        service = VolumeScript._create_volume_service(stderr, reactor, options)
+    #        self.assertEqual(
+    #            (True, config, StoragePool(reactor, pool, mountpoint)),
+    #            (service.running, service._config_path, service.pool)
+    #        )
+    #
     def test_service_factory(self):
         """
         ``VolumeScript._create_volume_service`` uses
@@ -1001,12 +1137,14 @@ class VolumeScriptMainTests(TestCase):
     """
     Tests for ``VolumeScript.main``.
     """
+
     def test_arguments(self):
         """
         ``VolumeScript.main`` calls the ``main`` method of the script object
         the ``VolumeScript`` was initialized with, passing the same reactor and
         options and also the running ``VolumeService``.
         """
+
         @implementer(ICommandLineVolumeScript)
         class VolumeServiceScript(object):
             def __init__(self):

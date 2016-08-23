@@ -205,7 +205,6 @@ class FlockerPVCCreateTest(AsyncTestCase):
         d = k8s_cluster.check_rc_provision(1, {"name": name1})
         d.addCallback(lambda ignore: k8s_cluster.delete_rc(rc1))
         d.addCallback(lambda ignore: k8s_cluster.create_replication_controllers(rc2))
-        # self.addCleanup(k8s_cluster.delete_rc, rc2)
         d.addCallback(lambda ignore: self.addCleanup(k8s_cluster.delete_rc, rc2))
         return d.addCallback(lambda ignore: k8s_cluster.check_rc_provision(1, {"name": name2}))
 

@@ -43,7 +43,7 @@ from ...control._model import (
 from ...volume.service import VolumeName
 from ...volume._model import VolumeSize
 from ...volume.testtools import create_volume_service
-from ...volume._ipc import RemoteVolumeManager, standard_node
+from ...volume._ipc import RemoteVolumeManager, standard_node, RemoteProcessNode
 
 from .istatechange import make_istatechange_tests
 
@@ -1066,7 +1066,7 @@ class HandoffVolumeTests(TestCase):
 
         result = []
 
-        def _handoff(volume, destination):
+        def _handoff(volume, destination, serde):
             result.extend([volume, destination])
         self.patch(volume_service, "handoff", _handoff)
         deployer = P2PManifestationDeployer(
@@ -1078,7 +1078,7 @@ class HandoffVolumeTests(TestCase):
         self.assertEqual(
             result,
             [volume_service.get(_to_volume_name(DATASET.dataset_id)),
-             RemoteVolumeManager(standard_node(hostname))])
+             RemoteVolumeManager(RemoteProcessNode(hostname))])
 
     def test_return(self):
         """
@@ -1088,7 +1088,7 @@ class HandoffVolumeTests(TestCase):
         result = Deferred()
         volume_service = create_volume_service(self)
         self.patch(volume_service, "handoff",
-                   lambda volume, destination: result)
+                   lambda volume, destination, serde: result)
         deployer = P2PManifestationDeployer(
             u'example.com', volume_service)
         handoff = HandoffDataset(
@@ -1124,7 +1124,7 @@ class PushVolumeTests(TestCase):
         self.assertEqual(
             result,
             [volume_service.get(_to_volume_name(DATASET.dataset_id)),
-             RemoteVolumeManager(standard_node(hostname))])
+             RemoteVolumeManager(RemoteProcessNode(hostname))])
 
     def test_return(self):
         """

@@ -4,8 +4,9 @@
 
 from __future__ import absolute_import
 
+from .._ipc import LocalVolumeManagerSerde, RemoteVolumeManager
 from ..service import VolumeName
-from ..testtools import create_realistic_servicepair
+from ..testtools import create_realistic_servicepair, MutatingProcessNode
 from ...testtools import AsyncTestCase, flaky
 
 
@@ -30,7 +31,7 @@ class RealisticTests(AsyncTestCase):
 
         def created(volume):
             return service_pair.from_service.handoff(
-                volume, service_pair.remote)
+                volume, service_pair.remote, LocalVolumeManagerSerde())
         d.addCallback(created)
         # If the Deferred errbacks the test will fail:
         return d
@@ -50,13 +51,16 @@ class RealisticTests(AsyncTestCase):
 
         def created(volume):
             return service_pair.from_service.handoff(
-                volume, service_pair.remote)
+                volume, service_pair.remote, LocalVolumeManagerSerde())
         d.addCallback(created)
 
         def handed_off(volume):
             return service_pair.to_service.handoff(
                 service_pair.to_service.get(
                     VolumeName(namespace=u"myns", dataset_id=u"myvolume")),
-                service_pair.origin_remote)
+                RemoteVolumeManager(MutatingProcessNode(service_pair.from_service),
+                                    service_pair.from_service._config_path),
+                LocalVolumeManagerSerde())
+        d.addCallback(handed_off)
         # If the Deferred errbacks the test will fail:
         return d
