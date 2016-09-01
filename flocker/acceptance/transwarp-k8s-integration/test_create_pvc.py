@@ -4,9 +4,11 @@ Test create flocker pvc set
 import json
 import random
 import string
+from uuid import UUID, uuid4
 
-from ...testtools import AsyncTestCase
 from .testtools import require_k8s_cluster
+from ..testtools import create_dataset
+from ...testtools import AsyncTestCase
 
 
 def create_test_pvcset(name, replicas):
@@ -227,3 +229,36 @@ class FlockerPVCCreateTest(AsyncTestCase):
         self.addCleanup(k8s_cluster.delete_rc, rc)
         return k8s_cluster.check_rc_provision(10, {"name": name})
 
+    @require_k8s_cluster(3)
+    def test_dataset_move(self, k8s_cluster):
+        """
+        A dataset can be moved from one node to another.
+
+        All attributes, including the maximum size, are preserved.
+        """
+        flocker_cluster = k8s_cluster.flocker_cluster
+        dataset_id = unicode(uuid4())
+        node_nums = len(flocker_cluster.nodes)
+        waiting_for_create = create_dataset(self, flocker_cluster,
+                                            metadata={u'storagetype': u'silver'},
+                                            dataset_id=dataset_id)
+        self.addCleanup(flocker_cluster.client.delete_dataset, bytes(dataset_id))
+
+        # Once created, request to move the dataset to node2
+        def move_dataset(dataset, i):
+            dataset_moving = flocker_cluster.client.move_dataset(
+                UUID(flocker_cluster.nodes[i].uuid), dataset.dataset_id)
+
+            # Wait for the dataset to be moved; we expect the state to
+            # match that of the originally created dataset in all ways
+            # other than the location.
+            moved_dataset = dataset.set(
+                primary=UUID(flocker_cluster.nodes[i].uuid))
+            dataset_moving.addCallback(
+                lambda dataset: flocker_cluster.wait_for_dataset(moved_dataset))
+            return dataset_moving
+
+        for i in range(0, 2 * node_nums):
+            waiting_for_create.addCallback(move_dataset, i % node_nums)
+
+        return waiting_for_create
