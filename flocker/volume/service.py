@@ -7,6 +7,7 @@ Volume manager service, the main entry point that manages volumes.
 
 from __future__ import absolute_import
 
+import copy
 import sys
 import json
 import stat
@@ -285,7 +286,7 @@ class VolumeService(Service):
         if volume.node_id != self.node_id:
             raise ValueError()
         fs = volume.get_filesystem()
-        destination_volume = volume
+        destination_volume = copy.copy(volume)
         # if failed on getting snapshots, which is caused by rename failed, retry on next iteration
         try:
             matched_volumes = destination.find_volumes(volume)
@@ -295,7 +296,7 @@ class VolumeService(Service):
                     raise RemoteFilesystemError()
                 if len(matched_vols) == 0:
                     return succeed([])
-                destination_volume = matched_vols[0]
+                destination_volume.node_id = matched_vols[0].node_id
                 return destination.snapshots(destination_volume)
             matched_volumes.addCallback(get_snapshots)
         except IOError as err:
