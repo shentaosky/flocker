@@ -262,7 +262,8 @@ class P2PManifestationDeployer(object):
                     primary = True
                 manifestations[dataset_id] = Manifestation(dataset=Dataset(dataset_id=dataset_id,
                                                                            maximum_size=maximum_size,
-                                                                           status=status),
+                                                                           status=status,
+                                                                           primary=node_id),
                                                            primary=primary)
             containers = self.docker_client.list_sync()
             applications = []

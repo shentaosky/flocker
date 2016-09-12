@@ -467,7 +467,7 @@ class ConvergenceLoop(object):
                 discover.addActionFinish()
             d = DeferredContext(discover.result)
 
-        def get_primary_manifestions(local_state):
+        def get_manifestions(local_state):
             node_state = local_state.node_state
             node_state_paths = node_state.paths
             manifestation_paths = {}
@@ -484,13 +484,25 @@ class ConvergenceLoop(object):
                         manifestations[dataset_id] = manifestation
                     else:
                         raise KeyError
+                else:
+                    dataset_id = manifestation.dataset.dataset_id
+                    for dataset, node in self.cluster_state.all_datasets():
+                        if node.uuid == self.deployer.node_uuid:
+                            continue
+                        if dataset_id == dataset.dataset_id:
+                            if dataset_id in node.paths.keys():
+                                manifestation_paths[dataset_id] = node.paths.get(
+                                    dataset_id)
+                                manifestations[dataset_id] = manifestation
+                            else:
+                                raise KeyError
 
             # TODO : report non-primary datasets
             local_state = local_state.transform(("node_state", "manifestations"), manifestations)
             return local_state.transform(("node_state", "paths"), manifestation_paths)
 
         def got_local_state(local_state):
-            control_service_shared_local_state = get_primary_manifestions(local_state)
+            control_service_shared_local_state = get_manifestions(local_state)
 
             self._last_discovered_local_state = control_service_shared_local_state
             cluster_state_changes = control_service_shared_local_state.shared_state_changes()
