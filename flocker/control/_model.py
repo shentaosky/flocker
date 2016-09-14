@@ -290,6 +290,16 @@ DATASET_LAZY_CREATE = u"lazycreate"
 DATASET_LAZY_CREATE_PENDING = u"Pending"
 DATASET_LAZY_CREATE_DONE = u"Done"
 
+
+def optional_field(item_type, mandatory, initial=()):
+    """
+    Create field that include type(None) in type
+    :param item_type: The required type
+    :param mandatory:
+    :param initial:
+    """
+    return field(type=(item_type, type(None)), mandatory=mandatory, initial=initial)
+
 class Dataset(PClass):
     """
     The filesystem data for a particular application.
@@ -308,7 +318,7 @@ class Dataset(PClass):
     :ivar int maximum_size: The maximum size in bytes of this dataset, or
         ``None`` if there is no specified limit.
 
-    :ivar UUID primary: The node where the dataset should manifest.
+    :ivar UUID primary: The node id where the dataset should manifest.
     """
     dataset_id = field(mandatory=True, type=unicode, factory=unicode)
     deleted = field(mandatory=True, initial=False, type=bool)
@@ -317,7 +327,7 @@ class Dataset(PClass):
                      serializer=lambda f, d: dict(d))
     status = field(mandatory=False, type=PMap, factory=pmap, initial=pmap(),
                      serializer=lambda f, d: dict(d))
-    primary = field(mandatory=True, type=UUID)
+    primary = optional_field(mandatory=False, item_type=unicode, initial=None)
 
     def get_storagetype(self):
         type = self.metadata.get(METADATA_STORAGETYPE, StorageType.DEFAULT.value)
