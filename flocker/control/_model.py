@@ -293,10 +293,11 @@ DATASET_LAZY_CREATE_DONE = u"Done"
 
 def optional_field(item_type, mandatory, initial=()):
     """
-    Create field that include type(None) in type
-    :param item_type: The required type
-    :param mandatory:
-    :param initial:
+    Create field that include type(None) in type.
+
+    :param item_type: The required type.
+    :param mandatory: boolean specifying if the field is mandatory or not.
+    :param initial: value of field if not specified when instantiating the record.
     """
     return field(type=(item_type, type(None)), mandatory=mandatory, initial=initial)
 
