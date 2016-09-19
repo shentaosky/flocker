@@ -417,34 +417,6 @@ class ConvergenceLoop(object):
             if calculated < remaining:
                 self._sleep_timeout.reset(calculated)
 
-    def _send_state_to_control_service(self, state_changes):
-        context = LOG_SEND_TO_CONTROL_SERVICE(
-            self.fsm.logger, connection=self.client,
-            local_changes=list(state_changes),
-        )
-        with context.context():
-            d = DeferredContext(self.client.callRemote(
-                NodeStateCommand,
-                state_changes=state_changes,
-                eliot_context=context)
-            )
-
-            def record_acknowledged_state(ignored):
-                self._last_acknowledged_state = state_changes
-
-            def clear_acknowledged_state(failure):
-                # We don't know if the control service has processed the update
-                # or not. So we clear the last acknowledged state so that we
-                # always send the state on the next iteration.
-                self._last_acknowledged_state = None
-                return failure
-
-            d.addCallbacks(record_acknowledged_state, clear_acknowledged_state)
-            d.addErrback(
-                writeFailure, self.fsm.logger,
-                u"Failed to send local state to control node.")
-            return d.addActionFinish()
-
     def _maybe_send_state_to_control_service(self, state_changes):
         """
         If the given ``state_changes`` differ from those last acknowledged by
@@ -457,6 +429,34 @@ class ConvergenceLoop(object):
             return self._send_state_to_control_service(state_changes)
         else:
             return succeed(None)
+
+    def _send_state_to_control_service(self, state_changes):
+        context = LOG_SEND_TO_CONTROL_SERVICE(
+            self.fsm.logger, connection=self.client,
+            local_changes=list(state_changes),
+        )
+        def clear_acknowledged_state(failure):
+            # We don't know if the control service has processed the update
+            # or not. So we clear the last acknowledged state so that we
+            # always send the state on the next iteration.
+            self._last_acknowledged_state = None
+            return failure
+        with context.context():
+
+            d = DeferredContext(self.client.callRemote(
+                NodeStateCommand,
+                state_changes=state_changes,
+                eliot_context=context)
+            )
+
+            def record_acknowledged_state(ignored):
+                self._last_acknowledged_state = state_changes
+
+            d.addCallbacks(record_acknowledged_state, clear_acknowledged_state)
+            d.addErrback(
+                writeFailure, self.fsm.logger,
+                u"Failed to send local state to control node.")
+            return d.addActionFinish()
 
     def output_CONVERGE(self, context):
         with LOG_CONVERGE(self.fsm.logger, cluster_state=self.cluster_state,
@@ -477,25 +477,12 @@ class ConvergenceLoop(object):
                 return local_state
 
             for manifestation in node_state.manifestations.values():
-                if manifestation.primary is True:
-                    dataset_id = manifestation.dataset.dataset_id
-                    if dataset_id in node_state_paths.keys():
-                        manifestation_paths[dataset_id] = node_state_paths.get(dataset_id)
-                        manifestations[dataset_id] = manifestation
-                    else:
-                        raise KeyError
+                dataset_id = manifestation.dataset.dataset_id
+                if dataset_id in node_state_paths.keys():
+                    manifestation_paths[dataset_id] = node_state_paths.get(dataset_id)
+                    manifestations[dataset_id] = manifestation
                 else:
-                    dataset_id = manifestation.dataset.dataset_id
-                    for dataset, node in self.cluster_state.all_datasets():
-                        if node.uuid == self.deployer.node_uuid:
-                            continue
-                        if dataset_id == dataset.dataset_id:
-                            if dataset_id in node.paths.keys():
-                                manifestation_paths[dataset_id] = node.paths.get(
-                                    dataset_id)
-                                manifestations[dataset_id] = manifestation
-                            else:
-                                raise KeyError
+                    raise KeyError
 
             # TODO : report non-primary datasets
             local_state = local_state.transform(("node_state", "manifestations"), manifestations)

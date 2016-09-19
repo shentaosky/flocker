@@ -559,15 +559,21 @@ class ConvergenceLoopFSMTests(TestCase):
         # Control service reports that this node has no manifestations.
         received_node = NodeState(hostname=local_node_hostname)
         received_cluster_state = DeploymentState(nodes=[received_node])
-        discovered_manifestation = Manifestation(
+        discovered_manifestation1 = Manifestation(
             dataset=Dataset(dataset_id=uuid4()),
             primary=True
         )
+        discovered_manifestation2 = Manifestation(
+            dataset=Dataset(dataset_id=uuid4()),
+            primary=False)
         local_node_state = NodeState(
             hostname=local_node_hostname,
-            manifestations={discovered_manifestation.dataset_id:
-                            discovered_manifestation},
-            devices={}, paths={discovered_manifestation.dataset_id: FilePath(b"/tmp/%s" % discovered_manifestation.dataset_id)},
+            manifestations={discovered_manifestation1.dataset_id: discovered_manifestation1,
+                            discovered_manifestation2.dataset_id: discovered_manifestation2},
+            devices={}, paths={discovered_manifestation1.dataset_id: FilePath(b"/tmp/%s" %
+                                                                              discovered_manifestation1.dataset_id),
+                               discovered_manifestation2.dataset_id: FilePath(b"/tmp/%s" %
+                                                                              discovered_manifestation2.dataset_id)},
         )
         client = self.make_amp_client([local_node_state])
         action = ControllableAction(result=Deferred())
@@ -591,6 +597,8 @@ class ConvergenceLoopFSMTests(TestCase):
 
         expected_local_cluster_state = DeploymentState(
             nodes=[local_node_state])
+        print "deployer.calculate_inputs"
+        print deployer.calculate_inputs
         [calculate_necessary_state_changes_inputs] = deployer.calculate_inputs
 
         (actual_local_state,
