@@ -78,7 +78,7 @@ class FakeAMPClient(object):
         # response register
         if 'eliot_context' in kwargs:
             kwargs.pop('eliot_context')
-            return succeed(self._responses[self._makeKey(command, kwargs)])
+        return succeed(self._responses[self._makeKey(command, kwargs)])
 
 
 class DelayedAMPClient(object):
