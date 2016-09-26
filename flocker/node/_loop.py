@@ -20,6 +20,7 @@ control service, and sends inputs to the ConvergenceLoop state machine.
 """
 
 from random import uniform
+from uuid import UUID
 
 from zope.interface import implementer
 
@@ -479,7 +480,10 @@ class ConvergenceLoop(object):
             for manifestation in node_state.manifestations.values():
                 dataset_id = manifestation.dataset.dataset_id
                 if dataset_id in node_state_paths.keys():
-                    manifestation_paths[dataset_id] = node_state_paths.get(dataset_id)
+                    path = node_state_paths.get(dataset_id)
+                    manifestation_paths[dataset_id] = path
+                    path_node = path.path.split("/")[-1]
+                    manifestation.transform(("dataset", "primary"), unicode(path_node.split(".")[0]))
                     manifestations[dataset_id] = manifestation
                 else:
                     raise KeyError
