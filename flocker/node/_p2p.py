@@ -435,7 +435,7 @@ def find_dataset_changes(uuid, current_state, desired_state):
                             set(manifestation.dataset for manifestation
                                 # We pretend ignorance is equivalent to no
                                 # datasets; this is wrong. See FLOC-2060.
-                                in (node.manifestations or {}).values())
+                                in (node.manifestations or {}).values() if manifestation.primary == True)
                         for node in current_state.nodes}
     # lazy creation at controller-node
     local_desired_datasets = set(dataset for dataset in desired_datasets.get(uuid, set())

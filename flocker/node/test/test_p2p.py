@@ -142,9 +142,9 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
         expect = self.successResultOf(deployer.discover_state(
             DeploymentState(nodes={self.EMPTY_NODESTATE}))).node_state
         actual = NodeState(hostname=deployer.hostname,
-                           uuid=deployer.node_uuid,
-                           manifestations={}, paths={}, devices={},
-                           applications=[])
+                  uuid=deployer.node_uuid,
+                  manifestations={}, paths={}, devices={},
+                  applications=[])
         self.assertEqual(expect.isEqual(actual),True)
 
     def _setup_datasets_and_containers(self):
@@ -233,9 +233,9 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
             {self.DATASET_ID1: Manifestation(
                 dataset=Dataset(dataset_id=self.DATASET_ID1, primary=volume1_node_id),
                 primary=True),
-                self.DATASET_ID2: Manifestation(
-                    dataset=Dataset(dataset_id=self.DATASET_ID2, primary=volume2_node_id),
-                    primary=True)},
+             self.DATASET_ID2: Manifestation(
+                dataset=Dataset(dataset_id=self.DATASET_ID2, primary=volume2_node_id),
+                primary=True)},
             self.successResultOf(d).node_state.manifestations)
 
     def test_discover_manifestation_paths(self):
@@ -248,11 +248,11 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
 
         self.assertEqual(
             {self.DATASET_ID1:
-                 self.volume_service.get(_to_volume_name(
-                     self.DATASET_ID1)).get_filesystem().get_path(),
+             self.volume_service.get(_to_volume_name(
+                 self.DATASET_ID1)).get_filesystem().get_path(),
              self.DATASET_ID2:
-                 self.volume_service.get(_to_volume_name(
-                     self.DATASET_ID2)).get_filesystem().get_path()},
+             self.volume_service.get(_to_volume_name(
+                 self.DATASET_ID2)).get_filesystem().get_path()},
             self.successResultOf(d).node_state.paths)
 
     def test_discover_manifestation_with_size(self):
@@ -266,6 +266,7 @@ class P2PManifestationDeployerDiscoveryTests(TestCase):
                 size=VolumeSize(maximum_size=1024 * 1024 * 100)
             )
         ))
+
         manifestation = Manifestation(
             dataset=Dataset(
                 dataset_id=self.DATASET_ID1,

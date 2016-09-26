@@ -319,7 +319,7 @@ class Dataset(PClass):
     :ivar int maximum_size: The maximum size in bytes of this dataset, or
         ``None`` if there is no specified limit.
 
-    :ivar UUID primary: The node id where the dataset should manifest.
+    :ivar unicode primary: The node id where the dataset should manifest.
     """
     dataset_id = field(mandatory=True, type=unicode, factory=unicode)
     deleted = field(mandatory=True, initial=False, type=bool)

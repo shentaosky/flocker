@@ -597,8 +597,6 @@ class ConvergenceLoopFSMTests(TestCase):
 
         expected_local_cluster_state = DeploymentState(
             nodes=[local_node_state])
-        print "deployer.calculate_inputs"
-        print deployer.calculate_inputs
         [calculate_necessary_state_changes_inputs] = deployer.calculate_inputs
 
         (actual_local_state,
