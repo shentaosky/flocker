@@ -9,6 +9,8 @@ import string
 from uuid import uuid4, UUID
 
 import time
+
+import subprocess
 from docker import Client
 from eliot.testing import (
     validate_logging, assertHasMessage, assertHasAction)
@@ -101,23 +103,16 @@ class EtcdConfigurationPersistenceServiceTests(AsyncTestCase):
         if self._client == None:
             self._client = Client(base_url='unix://var/run/docker.sock')
             response = self._client.images(
-                '172.16.1.41:5000/etcd:20150703-01')
-            if response==[]:
-                self._client.pull('172.16.1.41:5000/etcd:20150703-01',
-                                  stream=True)
-            pulltimeout = 100
-            while response==[]:
-                time.sleep(1)
-                pulltimeout -= 1
-                if pulltimeout <= 0:
-                    raise ImagePullTimeOut
-                    break
-                response = self._client.images(
-                    '172.16.1.41:5000/etcd:20150703-01')
+                '172.16.1.45/jenkins/etcd:live')
+            if response == []:
+                arguments = ["docker", "pull", "172.16.1.45/jenkins/etcd:live"]
+                process = subprocess.Popen(arguments)
+                process.wait()
+                time.sleep(2)
             self.container = self._client.create_container(
-                image='172.16.1.41:5000/etcd:20150703-01',
-                command='etcd --listen-client-urls http://0.0.0.0:4001 '
-                        '--advertise-client-urls http://0.0.0.0:4001'
+                image='172.16.1.45/jenkins/etcd:live',
+                command='etcd --listen-client-urls http://0.0.0.0:14001 '
+                        '--advertise-client-urls http://0.0.0.0:14001'
             )
             self._client.start(container=self.container)
             result_container = self._client.inspect_container(self.container)
