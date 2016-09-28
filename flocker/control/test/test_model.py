@@ -186,6 +186,22 @@ class ManifestationTests(TestCase):
         self.assertEqual(m1.dataset_id, m1.dataset.dataset_id)
 
 
+class DatasetTests(TestCase):
+    """
+    Tests fot ``Dataset``.
+    """
+    def test_dataset_primary(self):
+        """
+        ``Dataset.primary`` returns the node id of the dataset, and it will return ``None`` if don't set ``primary``
+        property.
+        """
+        primary=unicode(uuid4())
+        D1 = Dataset(dataset_id=unicode(uuid4()), primary=primary)
+        D2 = Dataset(dataset_id=unicode(uuid4()))
+        D3 = Dataset(dataset_id=unicode(uuid4()), primary=None)
+        self.assertEqual({primary, None, None}, {D1.primary, D2.primary, D3.primary})
+
+
 class NodeTests(TestCase):
     """
     Tests for ``Node``.

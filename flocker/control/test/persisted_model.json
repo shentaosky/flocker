@@ -73,6 +73,10 @@
                     "metadata": [
                         "pyrsistent._pmap.PMap"
                     ],
+                    "primary": [
+                        "__builtin__.NoneType",
+                        "__builtin__.unicode"
+                    ],
                     "status": [
                         "pyrsistent._pmap.PMap"
                     ]
@@ -211,5 +215,5 @@
         },
         "root": "flocker.control._model.Deployment"
     },
-    "version": "v1.9.0+5.gefdb430"
+    "version": "1.9.1+27.gfddff11"
 }
