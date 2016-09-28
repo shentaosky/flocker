@@ -54,7 +54,7 @@ TEST_DEPLOYMENT = Deployment(
 
 
 def createConfigurationPersistentService(reactor,
-        ip=b"0.0.0.0", port=4001, path=None):
+        ip=b"0.0.0.0", port=14001, path=None):
     """
     Create a service to persist configuration.
 
@@ -75,7 +75,7 @@ def createConfigurationPersistentService(reactor,
 
 class ImagePullTimeOut(Exception):
     """
-    Transwarp_etcd Pull Image '172.16.1.41:5000/etcd:20150703-01' Time Out
+    Transwarp_etcd Pull Image '172.16.1.45/jenkins/etcd:live' Time Out
     Exception.
     """
 
