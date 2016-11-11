@@ -21,7 +21,7 @@ WORKDIR /worksapce
 # install require package in seperate step to accelerate rebuild
 ADD requirements.txt /root/flocker/
 
-RUN pip install --trusted-host 172.16.1.41 -i http://172.16.1.41:4321/root/dev/+simple/ -r /root/flocker/requirements.txt
+RUN pip install --trusted-host 172.16.1.41 -i http://172.16.1.41:4321/root/pypi/+simple/ -r /root/flocker/requirements.txt
 
 ADD ./ /root/flocker
 RUN pushd /root/flocker && python setup.py install --root /; popd ; rm -rf /root/flocker
