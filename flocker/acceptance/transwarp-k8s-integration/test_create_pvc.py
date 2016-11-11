@@ -102,7 +102,7 @@ def create_test_rc(name, flocker_name, replicas):
                     "containers": [
                         {
                             "name": name,
-                            "image": "172.16.1.41:5000/jenkins/zookeeper:20151202-233937_rev20430",
+                            "image": "172.16.1.41:5000/jenkins/transwarp-docker:testing-latest",
                             "args": [
                                 "/bin/bash",
                                 "-c",
