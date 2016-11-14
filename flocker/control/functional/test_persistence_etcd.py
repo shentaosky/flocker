@@ -35,6 +35,8 @@ from flocker.control._model import (
     AttachedVolume, Configuration, Port, Link, Leases, Lease,
     )
 
+ETCD_IMAGE = "172.16.1.41:5000/library/etcd:20150703-01"
+
 DATASET = Dataset(dataset_id=u'4e7e3241-0ec3-4df6-9e7c-3f7e75e08855',
                   metadata={u"name": u"myapp"})
 NODE_UUID = UUID(u'ab294ce4-a6c3-40cb-a0a2-484a1f09521c')
@@ -75,8 +77,7 @@ def createConfigurationPersistentService(reactor,
 
 class ImagePullTimeOut(Exception):
     """
-    Transwarp_etcd Pull Image '172.16.1.45/jenkins/etcd:live' Time Out
-    Exception.
+    Transwarp_etcd Pull Image Time Out Exception.
     """
 
 
@@ -102,15 +103,14 @@ class EtcdConfigurationPersistenceServiceTests(AsyncTestCase):
         """
         if self._client == None:
             self._client = Client(base_url='unix://var/run/docker.sock')
-            response = self._client.images(
-                '172.16.1.45/jenkins/etcd:live')
+            response = self._client.images(ETCD_IMAGE)
             if response == []:
-                arguments = ["docker", "pull", "172.16.1.45/jenkins/etcd:live"]
+                arguments = ["docker", "pull", ETCD_IMAGE]
                 process = subprocess.Popen(arguments)
                 process.wait()
                 time.sleep(2)
             self.container = self._client.create_container(
-                image='172.16.1.45/jenkins/etcd:live',
+                image=ETCD_IMAGE,
                 command='etcd --listen-client-urls http://0.0.0.0:14001 '
                         '--advertise-client-urls http://0.0.0.0:14001'
             )

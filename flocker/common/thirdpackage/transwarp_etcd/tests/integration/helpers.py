@@ -7,7 +7,7 @@ import hashlib
 import uuid
 
 from OpenSSL import crypto
-
+from flocker.control.functional.test_persistence_etcd import ETCD_IMAGE
 
 class EtcdProcessHelper(object):
     def __init__(
@@ -28,13 +28,13 @@ class EtcdProcessHelper(object):
         self.schema = 'http://'
         self.compose_args = 'etcd_network:\n \
                   container_name: etcd_test_network\n \
-                  image: 172.16.1.41:5000/etcd:20150703-01\n \
+                  image: %s\n \
                   privileged: true\n \
                   hostname: etcd_network\n \
                   command:\n \
                     - /bin/bash\n \
                     - -c\n \
-                    - "while true; do sleep 1; echo `date`;done"\n'
+                    - "while true; do sleep 1; echo `date`;done"\n' % ETCD_IMAGE
         if tls:
             self.schema = 'https://'
 
@@ -90,7 +90,7 @@ class EtcdProcessHelper(object):
 
         self.compose_args += '\netcd%d:\n \
               container_name: etcd_test_%d\n \
-              image: 172.16.1.41:5000/etcd:20150703-01\n \
+              image: %s\n \
               net: "container:etcd_network"\n \
               volumes:\n \
                 - %s:%s\n \
@@ -113,7 +113,7 @@ class EtcdProcessHelper(object):
                 - --initial-cluster-token\n \
                 - %s\n \
                 - --initial-cluster-state\n \
-                - new\n' % (slot, slot, self.directory, self.directory, slot,
+                - new\n' % (slot, slot, ETCD_IMAGE, self.directory, self.directory, slot,
                             client, client, peer, peer, cluster_members, token)
 
         for key in proc_args.keys():
