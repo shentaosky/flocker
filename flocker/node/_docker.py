@@ -662,9 +662,18 @@ class DockerClient(object):
                 image_data = {u"Config": {u"Env": [], u"Cmd": []}}
             else:
                 raise
+        try:
+            command = image_data[u"Config"][u"Cmd"]
+            environment = image_data[u"Config"][u"Env"]
+        except KeyError:
+            command = None
+            environment = None
+        except TypeError:
+            command = None
+            environment = None
         cached_data = ImageDataCache(
-            command=image_data[u"Config"][u"Cmd"],
-            environment=image_data[u"Config"][u"Env"]
+            command=command,
+            environment=environment
         )
         self._image_cache.put(image, cached_data)
         return cached_data
